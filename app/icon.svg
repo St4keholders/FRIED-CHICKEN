@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <radialGradient id="eggGrad" cx="40%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#fff3b0"/>
+      <stop offset="60%" stop-color="#ffd166"/>
+      <stop offset="100%" stop-color="#f4a261"/>
+    </radialGradient>
+    <linearGradient id="helmGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e63946"/>
+      <stop offset="100%" stop-color="#9d0208"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Chicken Round Body -->
+  <ellipse cx="32" cy="38" rx="22" ry="20" fill="url(#eggGrad)"/>
+  
+  <!-- Belly highlight -->
+  <ellipse cx="32" cy="43" rx="14" ry="12" fill="#fff7d6" opacity="0.6"/>
+
+  <!-- Helmet -->
+  <path d="M 14 30 Q 32 10 50 30 Z" fill="url(#helmGrad)"/>
+  <rect x="11" y="28" width="42" height="5" rx="2.5" fill="#e63946"/>
+  <!-- Star on helmet -->
+  <polygon points="32,18 34,23 39,23 35,26 36,31 32,28 28,31 29,26 25,23 30,23" fill="#ffd166"/>
+
+  <!-- Beak -->
+  <polygon points="32,36 38,42 26,42" fill="#f77f00"/>
+
+  <!-- Eyes -->
+  <ellipse cx="24" cy="34" rx="4" ry="5" fill="#ffffff"/>
+  <circle cx="25" cy="34" r="2" fill="#14213d"/>
+  <ellipse cx="40" cy="34" rx="4" ry="5" fill="#ffffff"/>
+  <circle cx="39" cy="34" r="2" fill="#14213d"/>
+
+  <!-- Feet -->
+  <ellipse cx="24" cy="58" rx="6" ry="3" fill="#f77f00"/>
+  <ellipse cx="40" cy="58" rx="6" ry="3" fill="#f77f00"/>
+</svg>
