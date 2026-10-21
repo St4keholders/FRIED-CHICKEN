@@ -1,658 +1,315 @@
-// components/ControllerApp.jsx - Phone controller app with touch controls, lobby customizer, and 3D mirror view
 'use client';
+import { useEffect, useRef, useState } from 'react';
+import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, weaponById } from '../game/constants';
+import { peerOptionsFromURL } from '../game/peeropts';
+import { Audio } from '../game/audio';
+import { ConfigPanel, TeamBars, Results, MyChicken } from './Shared';
+import { TurnPad } from './TouchControls';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { ClientNet } from '../game/net.js';
-import { GameMirror } from '../game/mirror.js';
-import { TEAM_COLORS, ACCESSORIES, DEFAULT_CHICKEN_NAMES } from '../game/constants.js';
-import TouchControls from './TouchControls.jsx';
+function getPid() {
+  try {
+    let id = localStorage.getItem('fc_pid');
+    if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('fc_pid', id); }
+    return id;
+  } catch (e) { return Math.random().toString(36).slice(2); }
+}
+function loadPrefs() {
+  const def = { view: null, sound: true };
+  try { return { ...def, ...(JSON.parse(localStorage.getItem('fc_ctrl') || 'null') || {}) }; } catch (e) { return def; }
+}
+function savePrefs(p) { try { localStorage.setItem('fc_ctrl', JSON.stringify(p)); } catch (e) { /* nada */ } }
+async function goFullscreen() {
+  try {
+    const el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => {});
+  } catch (e) { /* nada */ }
+}
+function vib(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* nada */ } }
 
 export default function ControllerApp() {
-  const [roomCode, setRoomCode] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('idle'); // idle, connecting, connected, error, full
+  const [code, setCode] = useState(null);
+  const [typed, setTyped] = useState('');
+  const [status, setStatus] = useState('idle');
   const [slot, setSlot] = useState(null);
-  const [isJ1, setIsJ1] = useState(false);
-  const [phase, setPhase] = useState('LOBBY'); // LOBBY, CINEMATIC, MATCH, RESULTS
+  const [lobby, setLobby] = useState(null);
+  const [phase, setPhase] = useState('lobby');
+  const [results, setResults] = useState(null);
+  const [turn, setTurn] = useState(null);
+  const [paused, setPaused] = useState(false);
+  const [prefs, setPrefs] = useState(loadPrefs);
+  const [portrait, setPortrait] = useState(false);
 
-  // Customization
-  const [selectedColor, setSelectedColor] = useState(TEAM_COLORS[0].id);
-  const [selectedAccessory, setSelectedAccessory] = useState('casco');
-  const [teamName, setTeamName] = useState('');
-  const [chickenNames, setChickenNames] = useState(DEFAULT_CHICKEN_NAMES.slice(0, 4));
-
-  // Match State
-  const [viewEnabled, setViewEnabled] = useState(false);
-  const [activeTurn, setActiveTurn] = useState({
-    activeChickenId: null,
-    activeTeamId: null,
-    activeTeamName: '',
-    activeSlot: null,
-    clock: 45,
-    wind: { x: 0, z: 0, strength: 0 },
-    inventory: {},
-  });
-  const [selectedWeapon, setSelectedWeapon] = useState('bazuca');
-  const [cinematicLine, setCinematicLine] = useState(null);
-  const [resultsData, setResultsData] = useState(null);
-  const [reactionBubble, setReactionBubble] = useState(null);
-
-  const netRef = useRef(null);
+  const connRef = useRef(null);
   const mirrorRef = useRef(null);
-  const canvasRef = useRef(null);
-  const inputLoopRef = useRef(null);
-  const currentInputRef = useRef({ x: 0, z: 0, aimPitch: 0.2, aimYaw: 0 });
+  const stageRef = useRef(null);
+  const audioRef = useRef(null);
+  const inp = useRef({ mx: 0, my: 0, fire: false, jumpHeld: false });
+  const lastSent = useRef('');
+  const viewOnRef = useRef(false);
 
+  const send = (m) => { const c = connRef.current; if (c && c.open) { try { c.send(m); } catch (e) { /* nada */ } } };
+
+  // código desde el link
   useEffect(() => {
-    // Auto read code from URL query ?c=XXXXX
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('c');
-    if (code) {
-      setRoomCode(code.toUpperCase());
-      connectToHost(code.toUpperCase());
-    }
-
-    return () => {
-      if (netRef.current) netRef.current.destroy();
-      if (mirrorRef.current) mirrorRef.current.destroy();
-      if (inputLoopRef.current) clearInterval(inputLoopRef.current);
-    };
+    const q = new URLSearchParams(window.location.search);
+    const c = (q.get('c') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (c.length === 5) setCode(c);
+    const upd = () => setPortrait(window.innerHeight > window.innerWidth);
+    upd();
+    window.addEventListener('resize', upd);
+    return () => window.removeEventListener('resize', upd);
   }, []);
 
-  const connectToHost = (codeToConnect) => {
-    if (!codeToConnect) return;
-    setConnectionStatus('connecting');
-
-    const client = new ClientNet({
-      onOpen: () => {
-        setConnectionStatus('connected');
-      },
-      onWelcome: (msg) => {
-        setSlot(msg.slot);
-        setIsJ1(msg.isJ1);
-        const col = TEAM_COLORS[(msg.slot - 1) % TEAM_COLORS.length];
-        setSelectedColor(col.id);
-        setTeamName(`Equipo ${col.name}`);
-      },
-      onMessage: (msg) => {
-        handleIncomingMessage(msg);
-      },
-      onClose: () => {
-        setConnectionStatus('disconnected');
-      },
-      onError: (err) => {
-        console.error('Client error:', err);
-        setConnectionStatus('error');
-      },
-    });
-
-    client.connect(codeToConnect);
-    netRef.current = client;
-
-    // Start 30Hz input streaming loop
-    inputLoopRef.current = setInterval(() => {
-      if (netRef.current && netRef.current.connected) {
-        netRef.current.send({
-          t: 'in',
-          ...currentInputRef.current,
-        });
-      }
-    }, 33);
-  };
-
-  const handleIncomingMessage = (msg) => {
-    if (msg.t === 'full') {
-      setConnectionStatus('full');
-    } else if (msg.t === 'phase') {
-      setPhase(msg.phase);
-      if (msg.phase === 'RESULTS') {
-        setResultsData(msg);
-      }
-    } else if (msg.t === 'matchInit') {
-      setPhase('MATCH');
-      if (viewEnabled && canvasRef.current) {
-        if (mirrorRef.current) mirrorRef.current.destroy();
-        mirrorRef.current = new GameMirror(canvasRef.current, { slot });
-        mirrorRef.current.initMatch(msg);
-      }
-    } else if (msg.t === 'turn') {
-      setActiveTurn(msg);
-    } else if (msg.t === 'snap') {
-      if (mirrorRef.current) {
-        mirrorRef.current.receiveSnapshot(msg);
-      }
-    } else if (msg.t === 'carve') {
-      if (mirrorRef.current) {
-        mirrorRef.current.applyCarve(msg);
-      }
-    } else if (msg.t === 'cine') {
-      setPhase('CINEMATIC');
-      setCinematicLine(msg.line);
-    } else if (msg.t === 'buzz') {
-      if (navigator.vibrate) {
-        navigator.vibrate([120, 80, 150]);
-      }
-    }
-  };
-
-  // Toggle "Ver el juego aquí"
-  const toggleViewMode = () => {
-    const nextVal = !viewEnabled;
-    setViewEnabled(nextVal);
-    if (netRef.current) {
-      netRef.current.send({ t: 'view', enabled: nextVal });
-    }
-  };
-
-  const sendPick = () => {
-    if (netRef.current) {
-      netRef.current.send({
-        t: 'pick',
-        teamColorId: selectedColor,
-        accessory: selectedAccessory,
-        teamName,
-        chickenNames,
+  // conexión con el anfitrión
+  useEffect(() => {
+    if (!code) return undefined;
+    let peer = null, alive = true, retry = null;
+    setStatus('connecting');
+    const connect = async () => {
+      const { Peer } = await import('peerjs');
+      if (!alive) return;
+      peer = new Peer(undefined, peerOptionsFromURL());
+      peer.on('open', () => {
+        const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
+        connRef.current = conn;
+        conn.on('open', () => { setStatus('ok'); conn.send({ t: 'hello', pid: getPid() }); });
+        conn.on('data', onData);
+        conn.on('close', () => { if (!alive) return; setStatus('lost'); retry = setTimeout(reconnect, 2000); });
+        conn.on('error', () => {});
       });
+      peer.on('error', (e) => {
+        if (!alive) return;
+        if (e.type === 'peer-unavailable') setStatus('nohost');
+        else setStatus('lost');
+        retry = setTimeout(reconnect, 2500);
+      });
+    };
+    const reconnect = () => { try { peer && peer.destroy(); } catch (e) { /* nada */ } if (alive) connect(); };
+    connect();
+    return () => { alive = false; clearTimeout(retry); try { peer && peer.destroy(); } catch (e) { /* nada */ } };
+  }, [code]); // eslint-disable-line
+
+  const onData = (m) => {
+    if (!m || typeof m !== 'object') return;
+    switch (m.t) {
+      case 'welcome': setSlot(m.slot); break;
+      case 'full': setStatus('full'); break;
+      case 'busy': setStatus('busy'); break;
+      case 'kicked': setStatus('kicked'); break;
+      case 'lobby': setLobby(m); break;
+      case 'phase':
+        setPhase(m.phase); setResults(m.results || null);
+        if (m.phase !== 'match') setTurn(null);
+        break;
+      case 'turn': setTurn(m); setPaused(!!m.paused); break;
+      case 'paused': setPaused(!!m.v); break;
+      case 'buzz': vib(m.ms || 60); break;
+      case 'minit': if (mirrorRef.current) mirrorRef.current.setInit(m); else pendingInit.current = m; break;
+      case 'edit':
+        if (mirrorRef.current) {
+          if (m.reset && mirrorRef.current.init) { mirrorRef.current.setInit({ ...mirrorRef.current.init, edits: m.list }); break; }
+          if (mirrorRef.current.edits(m.from, m.list)) send({ t: 'resync' });
+        }
+        break;
+      case 'snap':
+        if (mirrorRef.current) {
+          mirrorRef.current.snap(m);
+          for (const e of m.fx || []) { mirrorRef.current.fx(e); playFx(e); }
+        }
+        break;
+      default: break;
     }
   };
+  const pendingInit = useRef(null);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  const playFx = (e) => {
+    const a = audioRef.current;
+    if (!a || !prefsRef.current.sound) return;
+    if (e.k === 'sfx') a.sfx(e.s);
+    else if (e.k === 'boom') a.sfx('boom', e.r);
+    else if (e.k === 'say') a.chirp(3, 1);
+  };
 
-  const isMyTurn = activeTurn.activeSlot === slot;
+  const noScreen = lobby && lobby.noScreen;
+  const viewOn = prefs.view === null ? !!noScreen : prefs.view;
+  viewOnRef.current = viewOn;
 
-  return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#0d1b2a',
-        color: '#fff',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        overflow: 'hidden',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* 3D MIRROR CANVAS (when viewEnabled is active) */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          display: viewEnabled && phase === 'MATCH' ? 'block' : 'none',
-          zIndex: 1,
-        }}
-      />
+  // vista del juego en el celular
+  useEffect(() => {
+    if (phase !== 'match' || !viewOn || !stageRef.current) return undefined;
+    let mv = null, raf = 0, alive = true, last = performance.now();
+    import('../game/mirror').then(({ MirrorView }) => {
+      if (!alive) return;
+      mv = new MirrorView(stageRef.current, lobby && lobby.cfg ? lobby.cfg.quality : 'normal');
+      mirrorRef.current = mv;
+      window.__fcMirror = mv;
+      if (pendingInit.current) { mv.setInit(pendingInit.current); pendingInit.current = null; }
+      send({ t: 'view', on: true });
+      const loop = (now) => {
+        if (!alive) return;
+        raf = requestAnimationFrame(loop);
+        const dt = Math.min(0.1, (now - last) / 1000); last = now;
+        mv.frame(dt);
+      };
+      raf = requestAnimationFrame(loop);
+    });
+    return () => { alive = false; cancelAnimationFrame(raf); if (mv) mv.dispose(); mirrorRef.current = null; send({ t: 'view', on: false }); };
+  }, [phase, viewOn, status]); // eslint-disable-line
 
-      {/* TOP STATUS BAR */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 10,
-          background: 'rgba(0,0,0,0.65)',
-          padding: '8px 16px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          backdropFilter: 'blur(6px)',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontWeight: '900', color: '#ffd166', fontSize: 16 }}>
-            PLUMAZO
-          </span>
-          {slot && (
-            <span
-              style={{
-                background: '#e63946',
-                borderRadius: 12,
-                padding: '2px 8px',
-                fontSize: 12,
-                fontWeight: 'bold',
-              }}
-            >
-              J{slot} {isJ1 ? '👑' : ''}
-            </span>
-          )}
+  // mandar controles mientras es tu turno
+  const myTurn = !!(turn && turn.you && phase === 'match');
+  useEffect(() => {
+    if (!myTurn) return undefined;
+    const id = setInterval(() => {
+      const s = JSON.stringify(inp.current);
+      if (s !== lastSent.current || Math.random() < 0.15) { lastSent.current = s; send({ t: 'in', ...inp.current, jh: inp.current.jumpHeld }); }
+    }, 33);
+    return () => { clearInterval(id); inp.current = { mx: 0, my: 0, fire: false, jumpHeld: false }; send({ t: 'in', mx: 0, my: 0, fire: false, jh: false }); };
+  }, [myTurn]); // eslint-disable-line
+
+  const initAudio = () => {
+    if (!audioRef.current) audioRef.current = new Audio();
+    audioRef.current.init();
+  };
+  const setPref = (p) => { const n = { ...prefs, ...p }; setPrefs(n); savePrefs(n); };
+
+  // ---------------- pantallas ----------------
+  if (!code) {
+    return (
+      <div className="ctrl"><div className="scroll" style={{ display: 'grid', placeItems: 'center' }}>
+        <div className="card" style={{ width: 'min(380px, 100%)', textAlign: 'center' }}>
+          <div className="logo" style={{ fontSize: 44 }}>FRIED<span className="l2">CHICKEN</span></div>
+          <p style={{ fontWeight: 800 }}>Escribe el código que sale en la pantalla</p>
+          <input className="txt" style={{ textAlign: 'center', fontSize: 30, letterSpacing: 6, fontFamily: 'var(--font)' }} maxLength={5} value={typed} onChange={(e) => setTyped(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} />
+          <button className="btn red big" style={{ marginTop: 14, width: '100%' }} disabled={typed.length !== 5} onClick={() => setCode(typed)}>Entrar</button>
         </div>
+      </div></div>
+    );
+  }
+  if (status !== 'ok' || slot === null || !lobby) {
+    const txt = {
+      idle: 'Conectando…', connecting: 'Conectando con la pantalla…', lost: 'Se perdió la conexión. Reintentando…', nohost: 'No encuentro esa sala. ¿Está abierta la pantalla? Reintentando…',
+      full: 'La sala está llena (máximo 4 jugadores).', busy: 'La partida ya empezó. Espera a que vuelvan al lobby.', kicked: 'Te sacaron de la sala.', ok: 'Entrando…',
+    }[status] || 'Conectando…';
+    return (
+      <div className="ctrl"><div className="scroll" style={{ display: 'grid', placeItems: 'center' }}>
+        <div className="card" style={{ width: 'min(380px, 100%)', textAlign: 'center' }}>
+          <div style={{ fontSize: 54 }}>🐣</div>
+          <h3>{txt}</h3>
+          <div className="small">Sala {code}</div>
+          {['full', 'kicked', 'busy'].includes(status) && <button className="btn white" style={{ marginTop: 10 }} onClick={() => window.location.reload()}>Reintentar</button>}
+        </div>
+      </div></div>
+    );
+  }
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {phase === 'MATCH' && (
-            <button
-              onClick={toggleViewMode}
-              style={{
-                background: viewEnabled ? '#2a9d8f' : 'rgba(255,255,255,0.2)',
-                border: 'none',
-                borderRadius: 16,
-                padding: '4px 10px',
-                color: '#fff',
-                fontSize: 12,
-                fontWeight: 'bold',
-                cursor: 'pointer',
-              }}
-            >
-              {viewEnabled ? '📺 Ver el juego' : '🎮 Solo mando'}
-            </button>
-          )}
+  const me = lobby.players[slot];
+  const isHost = lobby.host;
+  const humans = lobby.players.filter(Boolean).length;
 
-          <button
-            onClick={() => {
-              if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => {});
-              }
-            }}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              fontSize: 16,
-              cursor: 'pointer',
-            }}
-            title="Pantalla completa"
-          >
-            ⛶
-          </button>
+  if (phase === 'lobby' && me) {
+    const pick = (m) => { initAudio(); send({ t: 'pick', ...m }); };
+    return (
+      <div className="ctrl" onPointerDown={initAudio}>
+        <div className="scroll">
+          <div className="stack" style={{ maxWidth: 560, margin: '0 auto' }}>
+            <MyChicken me={me} slot={slot} players={lobby.players} cfg={lobby.cfg} onPick={pick} />
+            <div className="card">
+              <div className="lab" style={{ marginTop: 0 }}>Ver el juego en este celular</div>
+              <div className="seg">
+                <button className={viewOn ? 'on' : ''} onClick={() => setPref({ view: true })}>📺 Sí, verlo aquí</button>
+                <button className={!viewOn ? 'on' : ''} onClick={() => setPref({ view: false })}>🎮 Solo mando</button>
+              </div>
+              <div className="small" style={{ marginTop: 6 }}>{noScreen ? 'No hay pantalla principal: lo normal es verlo aquí.' : 'Con la pantalla principal basta con "Solo mando".'}</div>
+            </div>
+            {isHost ? (
+              <div className="card">
+                <h3>Ajustes (los manejas tú)</h3>
+                <ConfigPanel cfg={lobby.cfg} onCfg={(cfg) => send({ t: 'cfg', cfg })} canEdit humans={humans} />
+                <button className="btn red big" style={{ width: '100%', marginTop: 14 }} onClick={() => { initAudio(); goFullscreen(); send({ t: 'start' }); }}>¡A PELEAR!</button>
+              </div>
+            ) : (
+              <div className="card" style={{ textAlign: 'center' }}>
+                <h3 style={{ margin: 0 }}>Esperando a que J1 empiece…</h3>
+                <div className="small">{lobby.players.filter(Boolean).length} jugador(es) en la sala</div>
+                <button className="btn white sm" style={{ marginTop: 10 }} onClick={() => { initAudio(); goFullscreen(); }}>Pantalla completa</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+    );
+  }
 
-      {/* CONNECT SCREEN */}
-      {connectionStatus !== 'connected' && (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 24,
-            gap: 16,
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: 60 }}>🐔</div>
-          <h1 style={{ margin: 0, fontSize: 26, color: '#ffd166' }}>Unirse a la Partida</h1>
-          <p style={{ margin: 0, color: '#a8dadc', fontSize: 14 }}>
-            Ingresa el código de 5 letras que aparece en la pantalla del TV
-          </p>
-
-          <input
-            type="text"
-            value={roomCode}
-            maxLength={5}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            placeholder="CÓDIGO"
-            style={{
-              fontSize: 28,
-              textAlign: 'center',
-              letterSpacing: 4,
-              padding: '10px 16px',
-              borderRadius: 12,
-              border: '2px solid #ffd166',
-              background: 'rgba(255,255,255,0.1)',
-              color: '#fff',
-              fontWeight: '900',
-              width: 200,
-            }}
-          />
-
-          <button
-            disabled={roomCode.length !== 5 || connectionStatus === 'connecting'}
-            onClick={() => connectToHost(roomCode)}
-            style={{
-              background: 'linear-gradient(135deg, #e63946, #c1121f)',
-              border: 'none',
-              borderRadius: 24,
-              padding: '12px 32px',
-              color: '#fff',
-              fontWeight: 'bold',
-              fontSize: 16,
-              cursor: 'pointer',
-              opacity: roomCode.length === 5 ? 1 : 0.5,
-            }}
-          >
-            {connectionStatus === 'connecting' ? 'Conectando...' : 'Entrar al Corral'}
-          </button>
-
-          {connectionStatus === 'full' && (
-            <p style={{ color: '#e63946' }}>La sala está llena (máx 4 jugadores).</p>
-          )}
-          {connectionStatus === 'error' && (
-            <p style={{ color: '#e63946' }}>No se pudo conectar. Verifica el código.</p>
-          )}
+  // ---------------- partida ----------------
+  const info = turn && turn.info;
+  const teams = turn && turn.teams;
+  const myTeam = turn ? turn.myTeam : -1;
+  const pauseBtn = <button className="btn sm white" onClick={() => send({ t: 'pause' })}>II</button>;
+  return (
+    <div className="ctrl" onPointerDown={() => { initAudio(); }}>
+      {viewOn && phase !== 'lobby' && <div className="mstage" ref={stageRef} />}
+      <div className="top">
+        <span className="pill" style={{ background: me ? TEAM_COLORS[me.color].hex : '#999', color: '#fff' }}>{SLOT_NAMES[slot]}</span>
+        <span className="sp" />
+        {phase === 'match' && pauseBtn}
+        <button className="btn sm white" onClick={() => setPref({ view: !viewOn })}>{viewOn ? '🎮 Solo mando' : '📺 Ver juego'}</button>
+        {viewOn && <button className="btn sm white" onClick={() => setPref({ sound: !prefs.sound })}>{prefs.sound ? '🔊' : '🔇'}</button>}
+      </div>
+      {phase === 'match' && info && (viewOn || !myTurn) && (
+        <div className="mhud" style={viewOn ? {} : { display: 'none' }}>
+          <span className="tb" style={{ '--tc': info.color }}>{info.cpu ? '🤖 ' : ''}{info.teamName}</span>
+          <span className={`clock ${info.retreat ? 'ret' : info.clock <= 5 ? 'warn' : ''}`}>{info.retreat || info.clock}</span>
         </div>
       )}
-
-      {/* LOBBY SCREEN */}
-      {connectionStatus === 'connected' && phase === 'LOBBY' && (
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16,
-          }}
-        >
-          <h2 style={{ margin: 0, color: '#ffd166', fontSize: 20 }}>Personaliza tu Equipo</h2>
-
-          {/* Color Selector */}
-          <div>
-            <label style={{ fontSize: 13, color: '#a8dadc' }}>Color del Equipo:</label>
-            <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-              {TEAM_COLORS.map((col) => (
-                <button
-                  key={col.id}
-                  onClick={() => {
-                    setSelectedColor(col.id);
-                    setTeamName(`Equipo ${col.name}`);
-                    sendPick();
-                  }}
-                  style={{
-                    flex: 1,
-                    height: 44,
-                    borderRadius: 12,
-                    background: col.primary,
-                    border: selectedColor === col.id ? '3px solid #fff' : 'none',
-                    cursor: 'pointer',
-                    boxShadow: selectedColor === col.id ? '0 0 12px #fff' : 'none',
-                  }}
-                />
-              ))}
-            </div>
+      {phase === 'match' && myTurn && info && <TurnPad info={info} inv={turn.inv} onInput={(i) => { inp.current = i; }} onAct={(a) => send({ t: 'act', a })} />}
+      {phase === 'match' && myTurn && info && !viewOn && (
+        <div className="spect" style={{ top: 30, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+          <div className="card" style={{ padding: '8px 12px', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+            <b style={{ fontFamily: 'var(--font)', fontSize: 18 }}>¡Tu turno!</b>
+            <span>{info.ch}</span>
+            <span className={`clock ${info.retreat ? 'ret' : info.clock <= 5 ? 'warn' : ''}`} style={{ width: 44, height: 44, fontSize: 18 }}>{info.retreat || info.clock}</span>
+            <span className="small">💨 {info.wind}</span>
           </div>
-
-          {/* Accessory Selector */}
-          <div>
-            <label style={{ fontSize: 13, color: '#a8dadc' }}>Accesorio para tus pollitos:</label>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 8,
-                marginTop: 6,
-              }}
-            >
-              {ACCESSORIES.filter((a) => !a.secret).map((acc) => (
-                <button
-                  key={acc.id}
-                  onClick={() => {
-                    setSelectedAccessory(acc.id);
-                    sendPick();
-                  }}
-                  style={{
-                    background:
-                      selectedAccessory === acc.id
-                        ? 'rgba(255, 183, 3, 0.3)'
-                        : 'rgba(255,255,255,0.08)',
-                    border:
-                      selectedAccessory === acc.id
-                        ? '2px solid #ffb703'
-                        : '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: 12,
-                    padding: 8,
-                    color: '#fff',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 4,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ fontSize: 24 }}>{acc.icon}</span>
-                  <span style={{ fontSize: 11, fontWeight: 'bold' }}>{acc.name}</span>
-                </button>
-              ))}
+        </div>
+      )}
+      {phase === 'match' && !myTurn && (
+        <div className="spect" style={viewOn ? { top: 'auto', bottom: 12, transform: 'translateX(-50%)' } : {}}>
+          {!viewOn && (
+            <div className="card">
+              {info ? (
+                <>
+                  <div className="small">Ahora juega</div>
+                  <div style={{ fontFamily: 'var(--font)', fontSize: 26, color: info.color, WebkitTextStroke: '1px var(--ink)' }}>{info.cpu ? '🤖 ' : ''}{info.teamName}</div>
+                  <div style={{ fontWeight: 800 }}>{info.ch} · {info.retreat ? `escondiéndose ${info.retreat}s` : `${info.clock}s`} · 💨 {info.wind}</div>
+                </>
+              ) : <h3 style={{ margin: 0 }}>Preparando el siguiente turno…</h3>}
+              <TeamBars teams={teams} current={info ? info.team : -1} className="minibar" />
             </div>
+          )}
+          <div className="react">
+            {['🐔', '😂', '😱', '👏'].map((e) => <button key={e} onClick={() => { vib(10); send({ t: 'react', e }); }}>{e}</button>)}
           </div>
-
-          {/* J1 Start Game Button */}
-          {isJ1 ? (
-            <button
-              onClick={() => {
-                if (netRef.current) {
-                  netRef.current.send({ t: 'start' });
-                }
-              }}
-              style={{
-                marginTop: 'auto',
-                background: 'linear-gradient(135deg, #2a9d8f, #21867a)',
-                border: 'none',
-                borderRadius: 24,
-                padding: '16px',
-                color: '#fff',
-                fontWeight: '900',
-                fontSize: 18,
-                letterSpacing: 1,
-                cursor: 'pointer',
-                boxShadow: '0 6px 16px rgba(42, 157, 143, 0.5)',
-              }}
-            >
-              🚀 EMPEZAR PARTIDA
-            </button>
-          ) : (
-            <div
-              style={{
-                marginTop: 'auto',
-                textAlign: 'center',
-                padding: 16,
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: 16,
-                color: '#ffd166',
-                fontSize: 14,
-              }}
-            >
-              Esperando a que J1 inicie la partida...
-            </div>
-          )}
+          {myTeam < 0 && <div className="small">Estás mirando</div>}
         </div>
       )}
-
-      {/* MATCH SCREEN: CONTROLS & HUD */}
-      {connectionStatus === 'connected' && phase === 'MATCH' && (
-        <div style={{ flex: 1, position: 'relative' }}>
-          {/* Solo Mando Center Info (when viewEnabled is false) */}
-          {!viewEnabled && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 20,
-                left: 20,
-                right: 20,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: 'rgba(0,0,0,0.5)',
-                padding: '8px 16px',
-                borderRadius: 20,
-                backdropFilter: 'blur(4px)',
-                zIndex: 5,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 20 }}>
-                  {isMyTurn ? '🔥' : '⏳'}
-                </span>
-                <span style={{ fontWeight: 'bold', fontSize: 14 }}>
-                  {isMyTurn ? '¡ES TU TURNO!' : `Turno: ${activeTurn.activeTeamName}`}
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 13, color: '#ffd166' }}>
-                  🌬️ {activeTurn.wind?.strength} m/s
-                </div>
-                <div
-                  style={{
-                    background: activeTurn.clock < 10 ? '#e63946' : '#2a9d8f',
-                    padding: '2px 10px',
-                    borderRadius: 12,
-                    fontWeight: '900',
-                    fontSize: 15,
-                  }}
-                >
-                  {Math.ceil(activeTurn.clock)}s
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TOUCH CONTROLS OVERLAY */}
-          <TouchControls
-            isMyTurn={isMyTurn}
-            selectedWeapon={selectedWeapon}
-            inventory={activeTurn.inventory || {}}
-            onMove={(move) => {
-              currentInputRef.current.x = move.x;
-              currentInputRef.current.z = move.z;
-            }}
-            onAimDelta={(delta) => {
-              currentInputRef.current.aimYaw = (currentInputRef.current.aimYaw || 0) + delta.dYaw;
-              currentInputRef.current.aimPitch = Math.max(
-                -0.6,
-                Math.min(0.8, (currentInputRef.current.aimPitch || 0.2) + delta.dPitch)
-              );
-            }}
-            onFire={(wId, power, opts) => {
-              if (netRef.current) {
-                netRef.current.send({
-                  t: 'act',
-                  type: 'fire',
-                  weaponId: wId,
-                  power,
-                  options: opts,
-                });
-              }
-            }}
-            onJump={() => {
-              if (netRef.current) netRef.current.send({ t: 'act', type: 'jump' });
-            }}
-            onBackflip={() => {
-              if (netRef.current) netRef.current.send({ t: 'act', type: 'backflip' });
-            }}
-            onSelectWeapon={(wId) => {
-              setSelectedWeapon(wId);
-              if (netRef.current) netRef.current.send({ t: 'act', type: 'weapon', weaponId: wId });
-            }}
-            onToggleCamera={() => {
-              if (netRef.current) netRef.current.send({ t: 'act', type: 'camera' });
-            }}
-            onToggleAim={() => {
-              if (netRef.current) netRef.current.send({ t: 'act', type: 'aim_mode' });
-            }}
-            onReact={(emoji) => {
-              if (netRef.current) netRef.current.send({ t: 'act', type: 'react', emoji });
-            }}
-          />
-        </div>
-      )}
-
-      {/* CINEMATIC SCREEN */}
-      {connectionStatus === 'connected' && phase === 'CINEMATIC' && cinematicLine && (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-            padding: 24,
-            background: 'radial-gradient(circle, rgba(0,0,0,0.7), #000)',
-          }}
-        >
-          <div
-            style={{
-              background: 'rgba(0,0,0,0.85)',
-              border: '2px solid #ffd166',
-              borderRadius: 16,
-              padding: 20,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-            }}
-          >
-            <h3 style={{ margin: 0, color: '#ffd166', fontSize: 18 }}>
-              {cinematicLine.speaker}
-            </h3>
-            <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4 }}>
-              {cinematicLine.text}
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-              {isJ1 && (
-                <button
-                  onClick={() => netRef.current?.send({ t: 'cskip' })}
-                  style={{
-                    background: 'rgba(255,255,255,0.2)',
-                    border: 'none',
-                    borderRadius: 16,
-                    padding: '8px 16px',
-                    color: '#fff',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Saltar
-                </button>
-              )}
-              <button
-                onClick={() => netRef.current?.send({ t: 'cnext' })}
-                style={{
-                  background: '#2a9d8f',
-                  border: 'none',
-                  borderRadius: 16,
-                  padding: '8px 20px',
-                  color: '#fff',
-                  fontWeight: 'bold',
-                  fontSize: 15,
-                  cursor: 'pointer',
-                }}
-              >
-                Siguiente ➔
-              </button>
+      {paused && phase === 'match' && (
+        <div className="modal">
+          <div className="card">
+            <div className="res-title">Pausa</div>
+            <div className="btns" style={{ marginTop: 10 }}>
+              <button className="btn green big" onClick={() => send({ t: 'pause' })}>▶ Seguir</button>
+              {isHost && <button className="btn white" onClick={() => send({ t: 'quit' })}>Salir al lobby</button>}
             </div>
           </div>
         </div>
       )}
-
-      {/* RESULTS SCREEN */}
-      {connectionStatus === 'connected' && phase === 'RESULTS' && resultsData && (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 24,
-            textAlign: 'center',
-            gap: 16,
-          }}
-        >
-          <div style={{ fontSize: 50 }}>🏆</div>
-          <h1 style={{ color: '#ffd166', margin: 0 }}>¡Fin de la Partida!</h1>
-          <p style={{ fontSize: 18, color: '#a8dadc' }}>{resultsData.reason}</p>
-
-          {isJ1 && (
-            <button
-              onClick={() => netRef.current?.send({ t: 'start' })}
-              style={{
-                marginTop: 20,
-                background: '#e63946',
-                border: 'none',
-                borderRadius: 24,
-                padding: '12px 32px',
-                color: '#fff',
-                fontWeight: 'bold',
-                fontSize: 16,
-                cursor: 'pointer',
-              }}
-            >
-              🔄 Jugar Revancha
-            </button>
-          )}
-        </div>
-      )}
+      {phase === 'results' && <Results r={results} canAct={isHost} onAgain={() => send({ t: 'next', v: 'again' })} onLobby={() => send({ t: 'next', v: 'lobby' })} />}
+      {phase === 'match' && portrait && <div className="rot"><div><div className="ph">📱</div>Gira el celular para jugar</div></div>}
     </div>
   );
 }
+
+export { weaponById };

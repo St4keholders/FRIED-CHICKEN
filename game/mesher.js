@@ -1,167 +1,105 @@
-// game/mesher.js - Generates visible voxel face meshes for Three.js chunks
-
+// Mallas del terreno por bloques de 16³, con sombreado de esquinas (oclusión ambiental)
 import * as THREE from 'three';
-import { CHUNK_SIZE, BLOCK_AIR, BLOCK_SURFACE, BLOCK_SUBSURFACE, BLOCK_ROCK, BLOCK_INDESTRUCTIBLE, BLOCK_GELATIN } from './terrain.js';
+import { NX, NY, NZ, VOX, CHUNK } from './constants.js';
 
-// Precomputed face directions and vertex offsets
+// caras: dirección, 4 esquinas y los dos ejes tangentes para la oclusión
 const FACES = [
-  // +X
-  {
-    dir: [1, 0, 0],
-    normal: [1, 0, 0],
-    corners: [
-      [1, 0, 0],
-      [1, 1, 0],
-      [1, 1, 1],
-      [1, 0, 1],
-    ],
-  },
-  // -X
-  {
-    dir: [-1, 0, 0],
-    normal: [-1, 0, 0],
-    corners: [
-      [0, 0, 1],
-      [0, 1, 1],
-      [0, 1, 0],
-      [0, 0, 0],
-    ],
-  },
-  // +Y
-  {
-    dir: [0, 1, 0],
-    normal: [0, 1, 0],
-    corners: [
-      [0, 1, 1],
-      [1, 1, 1],
-      [1, 1, 0],
-      [0, 1, 0],
-    ],
-  },
-  // -Y
-  {
-    dir: [0, -1, 0],
-    normal: [0, -1, 0],
-    corners: [
-      [0, 0, 0],
-      [1, 0, 0],
-      [1, 0, 1],
-      [0, 0, 1],
-    ],
-  },
-  // +Z
-  {
-    dir: [0, 0, 1],
-    normal: [0, 0, 1],
-    corners: [
-      [1, 0, 1],
-      [1, 1, 1],
-      [0, 1, 1],
-      [0, 0, 1],
-    ],
-  },
-  // -Z
-  {
-    dir: [0, 0, -1],
-    normal: [0, 0, -1],
-    corners: [
-      [0, 0, 0],
-      [0, 1, 0],
-      [1, 1, 0],
-      [1, 0, 0],
-    ],
-  },
+  { n: [1, 0, 0], c: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]], u: [0, 0, 1], v: [0, 1, 0] },
+  { n: [-1, 0, 0], c: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], u: [0, 0, 1], v: [0, 1, 0] },
+  { n: [0, 1, 0], c: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], u: [1, 0, 0], v: [0, 0, 1] },
+  { n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], u: [1, 0, 0], v: [0, 0, 1] },
+  { n: [0, 0, 1], c: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], u: [1, 0, 0], v: [0, 1, 0] },
+  { n: [0, 0, -1], c: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]], u: [1, 0, 0], v: [0, 1, 0] },
 ];
+const AO = [0.52, 0.7, 0.86, 1];
 
-function getVoxelColor(blockType, palette) {
-  let hex = palette?.surface || 0xe9c46a;
-  if (blockType === BLOCK_SUBSURFACE) hex = palette?.subsurface || 0xd4a373;
-  else if (blockType === BLOCK_ROCK) hex = palette?.rock || 0x8d775f;
-  else if (blockType === BLOCK_INDESTRUCTIBLE) hex = palette?.indestructible || 0x4a4e69;
-  else if (blockType === BLOCK_GELATIN) hex = palette?.gelatin || 0xf4a261;
-
-  const r = ((hex >> 16) & 255) / 255;
-  const g = ((hex >> 8) & 255) / 255;
-  const b = (hex & 255) / 255;
-  return [r, g, b];
+function hexRGB(h) {
+  const n = parseInt(h.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-export function buildChunkMesh(terrain, cx, cy, cz, palette) {
-  const positions = [];
-  const normals = [];
-  const colors = [];
+export class TerrainMesh {
+  constructor(terrain, scene) {
+    this.t = terrain;
+    this.scene = scene;
+    this.group = new THREE.Group();
+    scene.add(this.group);
+    this.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.meshes = new Map();
+    const pal = terrain.theme.palette;
+    this.cols = [];
+    for (let m = 0; m < 16; m++) this.cols[m] = hexRGB(pal[m] || '#ff00ff');
+    for (let cx = 0; cx < NX / CHUNK; cx++) for (let cy = 0; cy < NY / CHUNK; cy++) for (let cz = 0; cz < NZ / CHUNK; cz++) this.build(cx, cy, cz);
+    terrain.dirty.clear();
+  }
 
-  const startX = cx * CHUNK_SIZE;
-  const startY = cy * CHUNK_SIZE;
-  const startZ = cz * CHUNK_SIZE;
-
-  for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-    const gx = startX + lx;
-    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
-      const gy = startY + ly;
-      for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-        const gz = startZ + lz;
-        const block = terrain.getBlock(gx, gy, gz);
-        if (block === BLOCK_AIR) continue;
-
-        const [cr, cg, cb] = getVoxelColor(block, palette);
-
-        for (const face of FACES) {
-          const nx = gx + face.dir[0];
-          const ny = gy + face.dir[1];
-          const nz = gz + face.dir[2];
-          const neighbor = terrain.getBlock(nx, ny, nz);
-
-          // Render face if adjacent block is air
-          if (neighbor === BLOCK_AIR) {
-            const [c0, c1, c2, c3] = face.corners;
-
-            // Two triangles per quad (0, 1, 2) and (0, 2, 3)
-            const quadVerts = [
-              [gx + c0[0], gy + c0[1], gz + c0[2]],
-              [gx + c1[0], gy + c1[1], gz + c1[2]],
-              [gx + c2[0], gy + c2[1], gz + c2[2]],
-              [gx + c0[0], gy + c0[1], gz + c0[2]],
-              [gx + c2[0], gy + c2[1], gz + c2[2]],
-              [gx + c3[0], gy + c3[1], gz + c3[2]],
-            ];
-
-            // Subtle directional ambient shading based on face normal
-            let shade = 1.0;
-            if (face.normal[1] > 0) shade = 1.1; // top face brighter
-            else if (face.normal[1] < 0) shade = 0.7; // bottom face darker
-            else if (face.normal[0] !== 0) shade = 0.88;
-            else if (face.normal[2] !== 0) shade = 0.95;
-
-            const vr = Math.min(1, cr * shade);
-            const vg = Math.min(1, cg * shade);
-            const vb = Math.min(1, cb * shade);
-
-            for (const v of quadVerts) {
-              positions.push(v[0], v[1], v[2]);
-              normals.push(face.normal[0], face.normal[1], face.normal[2]);
-              colors.push(vr, vg, vb);
-            }
-          }
-        }
-      }
+  update(maxPerFrame = 12) {
+    let n = 0;
+    for (const key of this.t.dirty) {
+      const [cx, cy, cz] = key.split(',').map(Number);
+      this.build(cx, cy, cz);
+      this.t.dirty.delete(key);
+      if (++n >= maxPerFrame) break;
     }
   }
 
-  if (positions.length === 0) return null;
+  build(cx, cy, cz) {
+    const key = `${cx},${cy},${cz}`;
+    const t = this.t;
+    const pos = [], nor = [], col = [], ind = [];
+    const i0 = cx * CHUNK, j0 = cy * CHUNK, k0 = cz * CHUNK;
+    const solid = (i, j, k) => (t.get(i, j, k) !== 0 ? 1 : 0);
+    for (let j = j0; j < j0 + CHUNK; j++) for (let k = k0; k < k0 + CHUNK; k++) for (let i = i0; i < i0 + CHUNK; i++) {
+      const m = t.get(i, j, k);
+      if (!m) continue;
+      const base = this.cols[m];
+      // variación suave por vóxel para que se vea de juguete y no plano
+      const h = ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) >>> 0;
+      const jit = 0.93 + ((h % 1000) / 1000) * 0.1;
+      const check = ((i >> 1) + (k >> 1) + (j >> 1)) & 1 ? 1 : 0.965;
+      for (const f of FACES) {
+        const ni = i + f.n[0], nj = j + f.n[1], nk = k + f.n[2];
+        if (solid(ni, nj, nk)) continue;
+        if (f.n[1] === -1 && j === 0) continue;
+        const start = pos.length / 3;
+        const ao = [];
+        for (const c of f.c) {
+          pos.push((i + c[0]) * VOX, (j + c[1]) * VOX, (k + c[2]) * VOX);
+          nor.push(f.n[0], f.n[1], f.n[2]);
+          // oclusión: mirar los 3 vecinos de la esquina del lado de la cara
+          const su = c[0] * f.u[0] + c[1] * f.u[1] + c[2] * f.u[2] ? 1 : -1;
+          const sv = c[0] * f.v[0] + c[1] * f.v[1] + c[2] * f.v[2] ? 1 : -1;
+          const a = solid(ni + f.u[0] * su, nj + f.u[1] * su, nk + f.u[2] * su);
+          const b = solid(ni + f.v[0] * sv, nj + f.v[1] * sv, nk + f.v[2] * sv);
+          const cc = solid(ni + f.u[0] * su + f.v[0] * sv, nj + f.u[1] * su + f.v[1] * sv, nk + f.u[2] * su + f.v[2] * sv);
+          const lvl = a && b ? 0 : 3 - a - b - cc;
+          ao.push(lvl);
+          const s = AO[lvl] * jit * check * (f.n[1] === 1 ? 1.06 : 1);
+          col.push(base[0] * s, base[1] * s, base[2] * s);
+        }
+        // girar el cuadro para que la oclusión no se vea torcida
+        if (ao[0] + ao[2] < ao[1] + ao[3]) ind.push(start + 1, start + 2, start + 3, start + 1, start + 3, start);
+        else ind.push(start, start + 1, start + 2, start, start + 2, start + 3);
+      }
+    }
+    const old = this.meshes.get(key);
+    if (old) { this.group.remove(old); old.geometry.dispose(); this.meshes.delete(key); }
+    if (!pos.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(ind);
+    g.computeBoundingSphere();
+    const mesh = new THREE.Mesh(g, this.mat);
+    mesh.matrixAutoUpdate = false;
+    this.group.add(mesh);
+    this.meshes.set(key, mesh);
+  }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-  const material = new THREE.MeshLambertMaterial({
-    vertexColors: true,
-    flatShading: true,
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
+  dispose() {
+    for (const m of this.meshes.values()) m.geometry.dispose();
+    this.scene.remove(this.group);
+    this.mat.dispose();
+  }
 }

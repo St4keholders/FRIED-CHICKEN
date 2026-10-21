@@ -1,129 +1,122 @@
-# 🐔 Plumazo — Guerra de Pollitos por Turnos
+# 🐔 Fried Chicken
 
-> **Plumazo** es un juego multijugador en 3D estilo *Worms 4: Mayhem* donde equipos de **pollitos de juguete** (pollitos de goma con casco militar y accesorios) se enfrentan por turnos en islas flotantes destructibles construidas con vóxeles.
+Guerra de **pollitos de juguete por turnos** en 3D, al estilo *Worms 4: Mayhem*. Se juega en el televisor (o sin televisor, solo con celulares) y **cada celular es un mando**.
 
----
+- Islas de vóxeles **destructibles** con cámara en tercera persona.
+- Hasta **4 jugadores** con su celular, más equipos manejados por la CPU.
+- **Modos:** Versus (todos contra todos) y Cooperativo (juntos contra la CPU).
+- **Equipos:** cada jugador su equipo, o equipos compartidos (por ejemplo 2 contra 2, turnándose).
+- **19 armas y utilidades**, viento, cajas que caen del cielo, minas, barriles y muerte súbita.
+- Todo el arte, la música y los sonidos se generan con código: no descarga imágenes ni audio.
 
-## 1. ¿Qué es el juego?
+## Subirlo a Vercel
 
-En su turno, cada jugador mueve a su pollito por pendientes y bloques de juguete, selecciona un arma disparatada de su arsenal, apunta en vista en tercera persona sobre el hombro, carga potencia y dispara.
-- **Terreno 100% destructible:** Las explosiones desintegran el terreno de vóxeles en tiempo real.
-- **Viento y balística:** El viento desvía los proyectiles y calcular la parábola es clave para no mandar el tiro al agua.
-- **Muerte súbita:** Tras 10 minutos de combate, toda la vida baja a 1 y el agua sube ronda tras ronda.
-- **Sin descargas pesadas:** Todo el arte (modelos vóxel, texturas, íconos) y todo el audio (música chiptune y efectos) se sintetizan por código en tiempo real.
+1. Sube el contenido de esta carpeta a un repositorio de GitHub (sin `node_modules` ni `.next`).
+2. En [vercel.com](https://vercel.com) → **Add New… → Project** → importa el repositorio.
+3. Vercel detecta Next.js solo. Dale **Deploy**, no hay que configurar nada.
+4. Abre el link en el PC conectado al televisor.
 
----
+Para probarlo en tu computador:
 
-## 2. Cómo ejecutar y desplegar en Vercel
-
-### En tu computadora local (Desarrollo):
 ```bash
 npm install
 npm run dev
 ```
-Abre en tu navegador: [http://localhost:3000](http://localhost:3000)
 
-### Despliegue en Vercel (Paso a paso, sin configurar nada):
-1. Sube este repositorio a tu cuenta de **GitHub**.
-2. Entra a [Vercel](https://vercel.com) e inicia sesión.
-3. Haz clic en **Add New Project** y selecciona tu repositorio `fried-chicken` (o `plumazo`).
-4. Vercel detectará automáticamente Next.js. Haz clic en **Deploy**.
-5. ¡Listo! Vercel te dará una URL pública HTTPS donde tú y tus amigos pueden jugar inmediatamente.
+y abre `http://localhost:3000`. (El celular no puede entrar a `localhost`; para el celular usa el link de Vercel.)
 
----
+## Contraseña
 
-## 3. Contraseña del Anfitrión
+La pantalla principal pide la misma contraseña de Star League: **`juan2026*`**. El navegador la recuerda.
+Los celulares no la piden.
 
-Para evitar que curiosos manipulen la pantalla del TV en salas compartidas, la pantalla principal `/` pide una contraseña la primera vez:
-- **Contraseña por defecto:** `starleague` (también acepta `plumazo` o `pollitos`).
-- **Cómo cambiarla:** En `game/constants.js`, genera el hash SHA-256 de tu nueva clave y reemplázalo en `PASSWORD_HASH`.
-- Los celulares que se unen como mandos **no** requieren contraseña.
+Para cambiarla, calcula el SHA-256 de la nueva (`echo -n 'nueva' | shasum -a 256`) y reemplaza `PASSWORD_HASH` en `game/constants.js`.
 
----
+## Cómo se juega
 
-## 4. Cómo se juega
+1. Abre el link en el PC/TV y pon la contraseña. Detrás del lobby se ve una partida de muestra entre robots.
+2. Cada jugador escanea el **QR** (o abre `tu-link.vercel.app/mando` y escribe el código de 5 letras).
+3. En el celular cada uno elige **nombre del equipo, color, accesorio** (casco, sombrero vueltiao, gorra, corona…) y, si quiere, el nombre de sus pollitos.
+4. **J1** maneja los ajustes (desde su celular o con el mouse en el PC) y toca **¡A PELEAR!**
 
-### Modo con TV (Recomendado):
-1. Abre la pantalla principal `/` en tu PC o Smart TV conectado al televisor de la sala.
-2. Ingresa la contraseña (`starleague`).
-3. Aparecerá el lobby con un **Código de 5 letras** y un **Código QR**.
-4. Cada jugador escanea el QR con la cámara de su celular (o entra a `/mando?c=CÓDIGO`).
-5. Cada jugador personaliza su color, sombrero y nombres de sus pollitos.
-6. El Jugador 1 (J1) presiona **INICIAR PARTIDA**.
+### Sin televisor (solo celulares)
 
-### Modo sin TV (Jugar en el mismo celular o pantalla táctil):
-- Si abres la página principal en una tableta o celular, activa **🎮 Jugar en este dispositivo**. El anfitrión llevará la simulación y funcionará simultáneamente como el mando de J1.
-- Los demás jugadores pueden elegir entre **Solo mando** (botones táctiles de alto contraste) o **Ver el juego aquí** (copia 3D completa en el celular sincronizada a 60 fps).
+1. Uno abre el link en su celular, pone la contraseña y toca **🎮 Jugar en este celular**: ese celular lleva la partida y es J1.
+2. Los demás se unen con el QR o con **📤 Compartir link**.
+3. Cada celular muestra el juego automáticamente. Quien no quiera verlo elige **Solo mando**.
 
-### Controles en el celular (en horizontal):
-| Zona Izquierda | Zona Derecha |
+El celular que crea la sala lleva la partida: si cierra la página o cambia de app, el juego se pausa.
+
+### Tu turno en el celular
+
+| Control | Qué hace |
 | --- | --- |
-| **Joystick Virtual:** Caminar, subir cuestas y girar. | **DISPARAR:** Mantén presionado para cargar potencia y suelta para lanzar. |
-| | **SALTAR:** Salto hacia adelante. |
-| | **ATRÁS:** Salto mortal hacia atrás (más alto). |
-| | **ARMAS:** Abre la cuadrícula con todo el arsenal y munición. |
-| | **🎯 APUNTAR:** Vista en tercera persona sobre el hombro. |
-| | **👁️ CÁMARA:** Vista panorámica general del mapa. |
-| | **Arrastrar pantalla derecha:** Puntería fina al apuntar. |
+| **Joystick** | Caminar (arriba/abajo) y girar (izquierda/derecha). En modo apuntar: mover la mira |
+| **🎯 Apuntar** | Cámara sobre el hombro para apuntar fino |
+| **💥 DISPARAR** | Mantener para cargar la fuerza y soltar para lanzar (las armas sin fuerza disparan al tocar) |
+| **⤴ Saltar** / **↩ Atrás** | Salto hacia adelante / salto hacia atrás (más alto) |
+| **👁 Mapa** | Vista general de la isla |
+| **Botón del arma** | Abre la cuadrícula de armas con la munición |
 
-### Controles de teclado en PC (de respaldo):
-- **WASD:** Moverse
-- **Espacio:** Saltar
-- **Q:** Salto hacia atrás
-- **Enter o Clic:** Mantener para cargar potencia y disparar
-- **E:** Cambiar arma
-- **C:** Alternar cámara libre / vista general
-- **M:** Silenciar o activar música y sonido
-- **Esc:** Pausar partida
+- Las armas con **mecha** muestran botones de 1 a 5 segundos.
+- Las armas que piden un **punto** (palomas, guacamaya, teletransporte) muestran una mira roja que se mueve con el joystick.
+- Después de disparar quedan **5 segundos para esconderse**.
+- Cuando no es tu turno puedes mandar **reacciones** (🐔 😂 😱 👏) que salen en la pantalla.
 
----
+### Teclado (PC)
 
-## 5. Modos de Juego
+En el lobby pulsa **Espacio** para unirte con el teclado. En tu turno: **W/S** caminar, **A/D** girar, **R** apuntar, **Espacio** (mantener) disparar, **J** saltar, **K** salto atrás, **E/Q** cambiar arma, **1-5** mecha, **C** mapa, **Esc** pausa, **M** silencio.
 
-### 1. Versus por Equipos
-Todos contra todos o en equipos compartidos. Gana el último equipo con pollitos vivos en la isla. Incluye podio final con estadísticas cómicas (mayor daño, mayor cantidad de pollitos ahogados, autogoles).
+## Ajustes del lobby
 
-### 2. Cooperativo contra CPU
-Los jugadores humanos unen fuerzas contra 1 a 3 escuadrones de robots de lata controlados por la inteligencia artificial (`game/ai.js`) en 3 dificultades: Fácil, Normal y Difícil.
+Modo · equipos de jugadores (cada uno su equipo / compartidos) · equipos CPU (0 a 3) y su dificultad (Fácil, Normal, Difícil) · isla (o aleatoria) · pollitos por equipo (2, 3, 4) · vida (100, 150, 200) · reloj del turno (30, 45, 60 s) · armas (Clásico o Locura) · muerte súbita (5, 10, 15 min) · fuego amigo en cooperativo · calidad gráfica.
 
-### 3. Modo Historia: *"El Gran Robo de los Huevos"*
-Campaña cooperativa de 8 niveles continuos contra el **Zorro Rufo** y su ejército de lata:
-1. **Arenero del Patio:** Tutorial jugado contra 2 pollitos de lata.
-2. **Bañera Espumosa:** Marea creciente: el agua sube cada ronda.
-3. **Cocina Gigante:** Recolecta 3 Huevitos especiales antes de 8 rondas.
-4. **Cuarto de Juguetes:** Escolta y protege a la Gallina Abuela.
-5. **Mesa de Billar:** Destruye 4 antenas de hojalata con munición limitada.
-6. **Jardín de Noche:** Jefe Sargento Lata (blindaje frontal invulnerable).
-7. **Ático Polvoriento:** Supervivencia extrema durante 6 oleadas.
-8. **Castillo del Zorro (Final):** Batalla contra el Zorro Rufo en su Mecha de Juguete.
-*Al completar la historia se desbloquea el Monóculo y el Disfraz de Rufo.*
+## Armas
 
----
+| Arma | Qué hace |
+| --- | --- |
+| 🥚 Bazuca de Huevo | Huevo explosivo que se lleva el viento |
+| 💣 Huevo Granada | Rebota y explota con la mecha |
+| 🌽 Maíz Pira | Revienta en 5 crispetas explosivas |
+| 🌻 Escopeta de Semillas | Dos tiros rectos por turno |
+| 🔥 Picotazo de Fuego | Salta y manda a volar hacia arriba |
+| 👡 La Chancla | “¡Venga para acá, mijo!”: manda a volar al rival |
+| 🕊️ Bandada de Palomas | Regalitos explosivos desde el cielo sobre el punto marcado |
+| 🕯️ Vela de Cumpleaños | Explota a los 5 segundos |
+| 🐣 Mina Nido | Explota cuando alguien se acerca |
+| 🐔 Mamá Gallina | Corre sola; toca DISPARAR otra vez para detonarla |
+| 🌟 Huevo de Oro | “¡Aleluyaaa!”: explosión enorme |
+| 🦜 Guacamaya Teledirigida | Vuela hasta el punto marcado |
+| ➰ Cuerda de Lombriz | Engánchate y balancéate |
+| 🌀 Ventilador a la Espalda | Vuela un rato (mantén Saltar) |
+| ☂️ Sombrilla | Cae despacio |
+| ✨ Teletransporte | Aparece donde marques |
+| 🧱 Viga de Juguete | Pon un puente adelante |
+| ⏭️ Saltar turno · 🏳️ Rendirse | |
 
-## 6. Arsenal y Utilidades
+## Islas
 
-| Arma | Tipo | Munición | Comportamiento |
-| --- | --- | --- | --- |
-| **Bazuca de Huevo** | Proyectil | ∞ | Vuela afectado por el viento; explota al contacto. |
-| **Huevo Granada** | Proyectil | ∞ | Rebota en el terreno; mecha configurable de 1 a 5 s. |
-| **Maíz Pira** | Racimo | 3 | Explota y se divide en 5 crispetas saltarinas explosivas. |
-| **Escopeta de Semillas**| Escopeta | ∞ | Dos disparos rectos de alta velocidad por turno sin viento. |
-| **Picotazo de Fuego** | Melee | ∞ | Gancho hacia arriba envuelto en llamas; lanza al rival por el aire. |
-| **La Chancla** | Bateo | 2 | Golpe definitivo de mamá colombiana; empuje colosal con frase típica. |
-| **Bandada de Palomas** | Aéreo | 1 | Bombardeo aéreo de 5 proyectiles sobre las coordenadas marcadas. |
-| **Vela de Cumpleaños** | Colocable | 2 | Dinamita festiva colocada a los pies con mecha de 5 s. |
-| **Mina Nido** | Proximidad | 2 | Se arma a los 2 s; pita y explota si un pollito se acerca a menos de 3.2 m. |
-| **Mamá Gallina** | Caminante | 1 | Gallina teledirigida que corre y salta obstáculos; detónala a voluntad. |
-| **Huevo de Oro** | Sagrada | 1 | Gran explosión bíblica con coro celestial sintetizado *"¡Aleluyaaa!"*. |
-| **Guacamaya Teledirigida**| Misil | 1 | Cohete con plumas que persigue la posición marcada en el mapa. |
-| **Sombrilla** | Utilidad | ∞ | Paracaídas de emergencia para flotar y anular el daño por caída. |
-| **Teletransporte** | Utilidad | 2 | Transporta al pollito al punto indicado (termina el turno). |
-| **Viga de Juguete** | Construcción| 3 | Coloca una sección de puente de bloques en el aire. |
+Arenero del Patio, Bañera Espumosa, Cocina Gigante, Cuarto de Juguetes, Mesa de Billar y Castillo del Zorro. Cada partida genera una isla distinta con su decoración de juguete (baldes, patitos de goma, cerezas, bloques, bolas de billar, torres…), que también se puede romper. La cuchara de la cocina es de metal y no se rompe.
 
----
+## Notas
 
-## 7. Notas Técnicas y Reconexión
+- La conexión celular ↔ pantalla usa el servidor gratuito de PeerJS solo para presentarlos; después los datos van directo. Funciona mejor en el **mismo Wi-Fi**.
+- Ver el juego en el celular gasta más batería y unos 1,5 MB por minuto. "Solo mando" casi no gasta.
+- Si un celular se desconecta en su turno, el turno se acaba solo; al volver a abrir el link recupera su puesto.
+- El juego no guarda partidas.
 
-- **Reconexión transparente:** Si un celular pierde señal, recarga la página o cambia de app, recupera automáticamente su puesto y su equipo mediante el ID persistente en `localStorage`.
-- **Cero consumo de datos:** El terreno se genera proceduralmente por semilla y las explosiones se sincronizan con eventos `carve` de pocos bytes (<2 MB por hora).
-- **Audio Web API puro:** No requiere archivos `.mp3` ni `.wav` externos, compatible con todos los navegadores modernos.
+## Estructura
+
+```
+app/                 páginas de Next.js (/ = pantalla principal, /mando = celular)
+components/          HostApp (lobby, HUD, resultados), ControllerApp (mando), TouchControls, Shared
+game/constants.js    armas, colores, ajustes y contraseña
+game/terrain.js      isla de vóxeles: generación por semilla, explosiones y vigas
+game/islands.js      temas y decoración de cada isla
+game/match.js        la partida: turnos, física, armas, objetos y victoria
+game/ai.js           la CPU (simula los tiros con la misma física)
+game/host.js         anfitrión: red, lobby, equipos y ciclo del juego
+game/render.js       gráficos 3D (Three.js), cámaras, partículas y etiquetas
+game/mirror.js       copia del juego en el celular
+game/audio.js        música y efectos sintetizados
+```
