@@ -41,12 +41,19 @@ function makeNoise(seed) {
   };
 }
 
+// Densidad: cada punto guarda qué tan "lleno" está (0 aire, 255 macizo). La superficie lisa
+// pasa por 128; la física considera macizo todo lo que está en 128 o más.
+const ISO = 128;
+const K = 105; // cuánto cambia la densidad por cada vóxel de distancia
+const clamp8 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
+
 export class Terrain {
   constructor(seed, islandId) {
     this.seed = seed >>> 0;
     this.islandId = islandId;
     this.theme = islandTheme(islandId);
-    this.v = new Uint8Array(NX * NY * NZ);
+    this.v = new Uint8Array(NX * NY * NZ); // material
+    this.d = new Uint8Array(NX * NY * NZ); // densidad
     this.edits = []; // historial de cambios para sincronizar celulares
     this.dirty = new Set();
     this.generate();
@@ -55,72 +62,99 @@ export class Terrain {
   idx(i, j, k) { return (j * NZ + k) * NX + i; }
   get(i, j, k) {
     if (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return AIR;
-    return this.v[(j * NZ + k) * NX + i];
+    const id = (j * NZ + k) * NX + i;
+    return this.d[id] >= ISO ? (this.v[id] || M.SUB) : AIR;
   }
-  set(i, j, k, m) {
-    if (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return;
-    this.v[(j * NZ + k) * NX + i] = m;
+  dens(i, j, k) {
+    if (j < 0) return 255;
+    if (i < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return 0;
+    return this.d[(j * NZ + k) * NX + i];
   }
   // consulta en coordenadas del mundo
   solid(x, y, z) {
     const i = Math.floor(x / VOX), j = Math.floor(y / VOX), k = Math.floor(z / VOX);
     if (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return false;
-    return this.v[(j * NZ + k) * NX + i] !== AIR;
+    return this.d[(j * NZ + k) * NX + i] >= ISO;
   }
-  // altura del suelo más alto en (x, z) en unidades del mundo (0 si no hay)
-  surfaceY(x, z) {
+  // altura lisa del suelo más alto en (x, z) en unidades del mundo (0 si no hay)
+  surfaceY(x, z, fromY) {
     const i = Math.floor(x / VOX), k = Math.floor(z / VOX);
     if (i < 0 || k < 0 || i >= NX || k >= NZ) return 0;
-    for (let j = NY - 1; j >= 0; j--) if (this.v[(j * NZ + k) * NX + i] !== AIR) return (j + 1) * VOX;
+    const top = fromY === undefined ? NY - 1 : Math.min(NY - 1, Math.floor(fromY / VOX));
+    for (let j = top; j >= 0; j--) {
+      const a = this.d[(j * NZ + k) * NX + i];
+      if (a >= ISO) {
+        const b = j + 1 < NY ? this.d[((j + 1) * NZ + k) * NX + i] : 0;
+        const t = a > b ? Math.min(1, (a - ISO) / (a - b)) : 0.5;
+        return (j + 0.5 + t) * VOX;
+      }
+    }
     return 0;
   }
 
   markDirtyBox(i0, j0, k0, i1, j1, k1) {
-    const c0 = [Math.floor((i0 - 1) / CHUNK), Math.floor((j0 - 1) / CHUNK), Math.floor((k0 - 1) / CHUNK)];
-    const c1 = [Math.floor((i1 + 1) / CHUNK), Math.floor((j1 + 1) / CHUNK), Math.floor((k1 + 1) / CHUNK)];
+    const c0 = [Math.floor((i0 - 2) / CHUNK), Math.floor((j0 - 2) / CHUNK), Math.floor((k0 - 2) / CHUNK)];
+    const c1 = [Math.floor((i1 + 2) / CHUNK), Math.floor((j1 + 2) / CHUNK), Math.floor((k1 + 2) / CHUNK)];
     for (let cx = Math.max(0, c0[0]); cx <= Math.min(NX / CHUNK - 1, c1[0]); cx++)
       for (let cy = Math.max(0, c0[1]); cy <= Math.min(NY / CHUNK - 1, c1[1]); cy++)
         for (let cz = Math.max(0, c0[2]); cz <= Math.min(NZ / CHUNK - 1, c1[2]); cz++) this.dirty.add(`${cx},${cy},${cz}`);
   }
 
-  // explosión: quita una esfera de vóxeles (el metal no se rompe)
+  // suma una forma (sdf > 0 adentro, en vóxeles); si m es AIR la resta
+  shape(i, j, k, sdf, m) {
+    if (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return;
+    const id = (j * NZ + k) * NX + i;
+    if (m === AIR) {
+      if (this.v[id] === M.METAL) return;
+      const nd = clamp8(ISO - sdf * K);
+      if (nd < this.d[id]) this.d[id] = nd;
+      return;
+    }
+    const nd = clamp8(ISO + sdf * K);
+    if (nd > this.d[id]) { this.d[id] = nd; if (nd > 70) this.v[id] = m; }
+  }
+
+  // explosión: quita una esfera lisa (el metal no se rompe)
   carve(x, y, z, r, record = true) {
     const ci = x / VOX, cj = y / VOX, ck = z / VOX, rv = r / VOX;
-    const i0 = Math.floor(ci - rv), i1 = Math.ceil(ci + rv);
-    const j0 = Math.floor(cj - rv), j1 = Math.ceil(cj + rv);
-    const k0 = Math.floor(ck - rv), k1 = Math.ceil(ck + rv);
-    const r2 = rv * rv;
+    const ext = rv + 2;
+    const i0 = Math.floor(ci - ext), i1 = Math.ceil(ci + ext);
+    const j0 = Math.floor(cj - ext), j1 = Math.ceil(cj + ext);
+    const k0 = Math.floor(ck - ext), k1 = Math.ceil(ck + ext);
     let n = 0;
     for (let j = Math.max(0, j0); j <= Math.min(NY - 1, j1); j++)
       for (let k = Math.max(0, k0); k <= Math.min(NZ - 1, k1); k++)
         for (let i = Math.max(0, i0); i <= Math.min(NX - 1, i1); i++) {
           const dx = i + 0.5 - ci, dy = j + 0.5 - cj, dz = k + 0.5 - ck;
-          const d2 = dx * dx + dy * dy + dz * dz;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const id = (j * NZ + k) * NX + i;
-          const m = this.v[id];
-          if (m === AIR || m === M.METAL) continue;
-          if (d2 <= r2) { this.v[id] = AIR; n++; }
-          else if (d2 <= (rv + 1.2) * (rv + 1.2) && m === M.TOP) this.v[id] = M.SUB; // borde quemado
+          if (this.v[id] === M.METAL) continue;
+          const nd = clamp8(ISO - (rv - dist) * K);
+          if (nd < this.d[id]) { if (this.d[id] >= ISO && nd < ISO) n++; this.d[id] = nd; }
+          if (dist <= rv + 1.6 && this.v[id] === M.TOP) this.v[id] = M.SUB; // borde quemado
         }
     this.markDirtyBox(i0, j0, k0, i1, j1, k1);
     if (record) this.edits.push({ k: 'c', x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), r: +r.toFixed(2) });
     return n;
   }
 
-  // viga de juguete: una fila de bloques
+  // viga de juguete: una tabla lisa
   beam(x, y, z, yaw, len = 6, record = true) {
     const dx = Math.sin(yaw), dz = Math.cos(yaw);
-    const cells = [];
-    for (let s = 0; s <= len; s += VOX * 0.5) {
-      for (const w of [-0.5, 0, 0.5]) {
-        const px = x + dx * s + dz * w * VOX * 2, pz = z + dz * s - dx * w * VOX * 2;
-        const i = Math.floor(px / VOX), j = Math.floor(y / VOX), k = Math.floor(pz / VOX);
-        if (this.get(i, j, k) === AIR) { this.set(i, j, k, M.BEAM); cells.push([i, j, k]); }
-      }
+    const hl = len / 2 / VOX, hw = 0.55 / VOX, hh = 0.22 / VOX;
+    const cx = (x + dx * len / 2) / VOX, cy = y / VOX, cz = (z + dz * len / 2) / VOX;
+    const ext = hl + 2;
+    const i0 = Math.floor(cx - ext), i1 = Math.ceil(cx + ext), k0 = Math.floor(cz - ext), k1 = Math.ceil(cz + ext);
+    const j0 = Math.floor(cy - hh - 2), j1 = Math.ceil(cy + hh + 2);
+    for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) {
+      const px = i + 0.5 - cx, py = j + 0.5 - cy, pz = k + 0.5 - cz;
+      const a = Math.abs(px * dx + pz * dz), b = Math.abs(px * dz - pz * dx), c = Math.abs(py);
+      const sdf = Math.min(hl - a, hw - b, hh - c);
+      if (sdf > -2) this.shape(i, j, k, sdf, M.BEAM);
     }
-    for (const [i, j, k] of cells) this.markDirtyBox(i, j, k, i, j, k);
+    this.markDirtyBox(i0, j0, k0, i1, j1, k1);
     if (record) this.edits.push({ k: 'b', x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), yaw: +yaw.toFixed(3), len });
-    return cells.length;
+    return 1;
   }
 
   applyEdit(e) {
@@ -132,7 +166,7 @@ export class Terrain {
   // resumen del terreno para comprobar que todos tienen el mismo
   hash() {
     let h = 2166136261;
-    for (let i = 0; i < this.v.length; i += 7) { h ^= this.v[i]; h = Math.imul(h, 16777619); }
+    for (let i = 0; i < this.d.length; i += 7) { h ^= this.d[i]; h = Math.imul(h, 16777619); }
     return h >>> 0;
   }
 
@@ -168,18 +202,27 @@ export class Terrain {
       else {
         const hills = (noise(i * 0.06 + 31, k * 0.06 - 17, 4) + 0.5) * th.hill;
         h = water + 2 + Math.pow(Math.min(1, m), th.curve) * maxH + hills * Math.min(1, m * 3);
-        if (th.terraces) h = Math.round(h / th.terraces) * th.terraces;
+        if (th.terraces) { const tq = Math.round(h / th.terraces) * th.terraces; h += (tq - h) * 0.3; }
       }
       heights[k * NX + i] = Math.max(1, Math.min(NY - 6, h));
     }
+    const H = (i, k) => heights[Math.max(0, Math.min(NZ - 1, k)) * NX + Math.max(0, Math.min(NX - 1, i))];
     for (let k = 0; k < NZ; k++) for (let i = 0; i < NX; i++) {
-      const h = Math.floor(heights[k * NX + i]);
-      for (let j = 0; j < h; j++) {
+      const h = heights[k * NX + i];
+      const under = h <= water;
+      // distancia real a la superficie (corrige por la pendiente para que no salgan escalones)
+      const gx = (H(i + 1, k) - H(i - 1, k)) / 2, gz = (H(i, k + 1) - H(i, k - 1)) / 2;
+      const slope = Math.sqrt(1 + gx * gx + gz * gz);
+      for (let j = 0; j < NY; j++) {
+        const depth = (h - (j + 0.5)) / slope;
+        if (depth < -3) break;
+        const id = (j * NZ + k) * NX + i;
+        this.d[id] = clamp8(ISO + depth * K);
         let m = M.DEEP;
-        if (j >= h - 1) m = M.TOP;
-        else if (j >= h - 4) m = M.SUB;
-        if (h <= water) m = j >= h - 2 ? th.seabed || M.SUB : M.DEEP;
-        this.v[(j * NZ + k) * NX + i] = m;
+        if (depth < 1.3) m = M.TOP;
+        else if (depth < 4.5) m = M.SUB;
+        if (under) m = depth < 2.5 ? th.seabed || M.SUB : M.DEEP;
+        this.v[id] = m;
       }
     }
     // túneles y cuevas
@@ -192,7 +235,7 @@ export class Terrain {
         a += (r() - 0.5) * 0.5;
         x += Math.cos(a) * 1.5; z += Math.sin(a) * 1.5; y += (r() - 0.5) * 0.8;
         y = Math.max(water + 2, Math.min(water + 12, y));
-        this.carve(x * VOX, y * VOX, z * VOX, (2.2 + r() * 1.2) * VOX, false);
+        this.carve(x * VOX, y * VOX, z * VOX, (2.4 + r() * 1.2) * VOX, false);
       }
     }
     // decoración del tema (también se puede romper)
@@ -200,23 +243,39 @@ export class Terrain {
     this.dirty.clear();
   }
 
-  // utilidades para decorar
+  // utilidades para decorar (coordenadas en vóxeles; formas lisas)
   box(i0, j0, k0, w, h, d, m) {
-    for (let j = j0; j < j0 + h; j++) for (let k = k0; k < k0 + d; k++) for (let i = i0; i < i0 + w; i++) this.set(i, j, k, m);
+    const cx = i0 + w / 2, cy = j0 + h / 2, cz = k0 + d / 2;
+    const rr = Math.min(0.9, w / 2, h / 2, d / 2);
+    const hx = w / 2 - rr, hy = h / 2 - rr, hz = d / 2 - rr;
+    for (let j = Math.floor(j0 - 2); j <= j0 + h + 2; j++) for (let k = Math.floor(k0 - 2); k <= k0 + d + 2; k++) for (let i = Math.floor(i0 - 2); i <= i0 + w + 2; i++) {
+      const qx = Math.abs(i + 0.5 - cx) - hx, qy = Math.abs(j + 0.5 - cy) - hy, qz = Math.abs(k + 0.5 - cz) - hz;
+      const out = Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0);
+      this.shape(i, j, k, rr - out, typeof m === 'function' ? m(i, j, k) : m);
+    }
   }
   sphere(ci, cj, ck, rad, m, sq = 1) {
-    for (let j = Math.floor(cj - rad); j <= cj + rad; j++)
-      for (let k = Math.floor(ck - rad); k <= ck + rad; k++)
-        for (let i = Math.floor(ci - rad); i <= ci + rad; i++) {
+    const ry = rad * sq;
+    for (let j = Math.floor(cj - ry - 2); j <= cj + ry + 2; j++)
+      for (let k = Math.floor(ck - rad - 2); k <= ck + rad + 2; k++)
+        for (let i = Math.floor(ci - rad - 2); i <= ci + rad + 2; i++) {
           const dy = (j + 0.5 - cj) / sq;
-          if ((i + 0.5 - ci) ** 2 + dy * dy + (k + 0.5 - ck) ** 2 <= rad * rad) this.set(i, j, k, typeof m === 'function' ? m(i, j, k) : m);
+          const dist = Math.sqrt((i + 0.5 - ci) ** 2 + dy * dy + (k + 0.5 - ck) ** 2);
+          this.shape(i, j, k, rad - dist, typeof m === 'function' ? m(i, j, k) : m);
         }
   }
   cylinder(ci, j0, ck, rad, h, m) {
-    for (let j = j0; j < j0 + h; j++) for (let k = Math.floor(ck - rad); k <= ck + rad; k++) for (let i = Math.floor(ci - rad); i <= ci + rad; i++)
-      if ((i + 0.5 - ci) ** 2 + (k + 0.5 - ck) ** 2 <= rad * rad) this.set(i, j, k, typeof m === 'function' ? m(i, j, k) : m);
+    for (let j = Math.floor(j0 - 2); j <= j0 + h + 2; j++) for (let k = Math.floor(ck - rad - 2); k <= ck + rad + 2; k++) for (let i = Math.floor(ci - rad - 2); i <= ci + rad + 2; i++) {
+      const radial = rad - Math.hypot(i + 0.5 - ci, k + 0.5 - ck);
+      const vert = Math.min(j + 0.5 - j0, j0 + h - (j + 0.5));
+      this.shape(i, j, k, Math.min(radial, vert), typeof m === 'function' ? m(i, j, k) : m);
+    }
   }
-  topAt(i, k) { for (let j = NY - 1; j >= 0; j--) if (this.get(i, j, k) !== AIR) return j + 1; return 0; }
+  topAt(i, k) {
+    if (i < 0 || k < 0 || i >= NX || k >= NZ) return 0;
+    for (let j = NY - 1; j >= 0; j--) if (this.d[(j * NZ + k) * NX + i] >= ISO) return j + 1;
+    return 0;
+  }
 
   // puntos de aparición sobre tierra firme, separados entre sí
   spawnPoints(n, seed = 1) {

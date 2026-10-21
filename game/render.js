@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { NX, NY, NZ, VOX, WORLD_X, WORLD_Z, CHICKEN_H, weaponById } from './constants.js';
 import { TerrainMesh } from './mesher.js';
-import { makeChicken, makeObject, PROJ_MODEL, toonMat, objectGeometry, chickenGeometry } from './models.js';
+import { makeChicken, makeObject, PROJ_MODEL } from './models.js';
 
 const tmpV = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -39,7 +39,7 @@ class Particles {
     this.max = max;
     this.list = [];
     const mat = lit ? new THREE.MeshLambertMaterial({ vertexColors: false }) : new THREE.MeshBasicMaterial({ toneMapped: false });
-    this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, max);
+    this.mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.62, 0), mat, max);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.count = 0;
     this.mesh.frustumCulled = false;
@@ -106,11 +106,11 @@ export function chickenPortrait(color, acc, robot = false, size = 160) {
     }
     const { r, scene, cam } = portraitR;
     r.setSize(size, size, false);
-    const mesh = new THREE.Mesh(chickenGeometry(color, acc, robot), toonMat);
-    mesh.rotation.y = 0.55;
+    const mesh = makeChicken(color, acc, robot);
+    mesh.rotation.y = 0.5;
     scene.add(mesh);
-    cam.position.set(0, 0.95, 4.4);
-    cam.lookAt(0, 0.78, 0);
+    cam.position.set(0, 0.95, 3.7);
+    cam.lookAt(0, 0.8, 0);
     r.render(scene, cam);
     const url = r.domElement.toDataURL('image/png');
     scene.remove(mesh);
@@ -132,6 +132,8 @@ export class Renderer {
     this.canvas = canvas;
     this.r = new THREE.WebGLRenderer({ canvas, antialias: this.quality === 'alta', powerPreference: 'high-performance' });
     this.r.outputColorSpace = THREE.SRGBColorSpace;
+    this.shadows = this.quality === 'alta' || (this.quality === 'normal' && !this.phone);
+    if (this.shadows) { this.r.shadowMap.enabled = true; this.r.shadowMap.type = THREE.PCFSoftShadowMap; }
     this.overlay = document.createElement('div');
     this.overlay.className = 'ov3d';
     container.appendChild(this.overlay);
@@ -139,11 +141,20 @@ export class Renderer {
     this.cam = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 400);
     this.cam.position.set(WORLD_X / 2, 40, WORLD_Z + 30);
     this.camLook = new THREE.Vector3(WORLD_X / 2, 4, WORLD_Z / 2);
-    this.hemi = new THREE.HemisphereLight(0xffffff, 0x8a6a4a, 1.25);
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x8a6a4a, 1.35);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
-    this.sun.position.set(40, 80, 25);
-    this.scene.add(this.sun);
+    this.sun = new THREE.DirectionalLight(0xfff4e0, 1.9);
+    this.sun.position.set(WORLD_X / 2 + 35, 70, WORLD_Z / 2 + 25);
+    this.sun.target.position.set(WORLD_X / 2, 0, WORLD_Z / 2);
+    this.scene.add(this.sun, this.sun.target);
+    if (this.shadows) {
+      this.sun.castShadow = true;
+      const sc = this.sun.shadow.camera;
+      sc.left = -52; sc.right = 52; sc.top = 52; sc.bottom = -52; sc.near = 10; sc.far = 180;
+      this.sun.shadow.mapSize.set(this.quality === 'alta' ? 4096 : 2048, this.quality === 'alta' ? 4096 : 2048);
+      this.sun.shadow.bias = -0.0006;
+      this.sun.shadow.normalBias = 0.04;
+    }
     this.parts = new Particles(this.scene, this.quality === 'ahorro' ? 260 : 600, true);
     this.glow = new THREE.Group(); // bolas de fuego
     this.scene.add(this.glow);
@@ -206,27 +217,43 @@ export class Renderer {
     this.scene.background = skyTexture(th.sky[0], th.sky[1]);
     this.scene.fog = new THREE.Fog(th.fog, 70, 190);
     this.hemi.color.set(th.sky[1]);
-    this.tmesh = new TerrainMesh(terrain, this.scene);
+    this.tmesh = new TerrainMesh(terrain, this.scene, { shadows: this.shadows });
     // agua con olas
     const wg = new THREE.PlaneGeometry(320, 320, 56, 56);
     wg.rotateX(-Math.PI / 2);
     this.waterGeo = wg;
     this.waterBase = Float32Array.from(wg.attributes.position.array);
-    this.water = new THREE.Mesh(wg, new THREE.MeshLambertMaterial({ color: th.water, transparent: true, opacity: 0.84 }));
+    this.water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: th.water, transparent: true, opacity: 0.82, shininess: 90, specular: 0x666666 }));
+    this.water.receiveShadow = this.shadows;
     this.water.position.set(WORLD_X / 2, th.waterVox * VOX, WORLD_Z / 2);
     this.scene.add(this.water);
     this.seabed = new THREE.Mesh(new THREE.PlaneGeometry(320, 320).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(th.water).multiplyScalar(0.45) }));
     this.seabed.position.set(WORLD_X / 2, 0.02, WORLD_Z / 2);
     this.scene.add(this.seabed);
-    // nubes de vóxeles
+    // montañas lejanas entre la neblina
+    this.far = new THREE.Group();
+    const fm = new THREE.MeshLambertMaterial({ color: new THREE.Color(th.fog).lerp(new THREE.Color(th.palette[1]), 0.35) });
+    const fg = new THREE.SphereGeometry(1, 20, 12);
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + Math.random() * 0.2;
+      const m = new THREE.Mesh(fg, fm);
+      const rr = 135 + Math.random() * 25;
+      m.position.set(WORLD_X / 2 + Math.cos(a) * rr, -4, WORLD_Z / 2 + Math.sin(a) * rr);
+      m.scale.set(18 + Math.random() * 20, 12 + Math.random() * 18, 14 + Math.random() * 10);
+      this.far.add(m);
+    }
+    this.scene.add(this.far);
+    // nubes redondas
     this.clouds = new THREE.Group();
-    const cm = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const cm = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xb8c4d0 });
+    const cg = new THREE.SphereGeometry(1, 16, 10);
     for (let i = 0; i < 9; i++) {
       const c = new THREE.Group();
       const n = 3 + Math.floor(Math.random() * 3);
       for (let j = 0; j < n; j++) {
-        const b = new THREE.Mesh(new THREE.BoxGeometry(3 + Math.random() * 4, 1.6 + Math.random() * 1.2, 2.5 + Math.random() * 3), cm);
-        b.position.set(j * 2.4 - n, Math.random(), Math.random() * 2 - 1);
+        const b = new THREE.Mesh(cg, cm);
+        b.scale.set(2.2 + Math.random() * 1.6, 1.3 + Math.random() * 0.8, 1.8 + Math.random() * 1.2);
+        b.position.set(j * 2.2 - n, Math.random() * 0.8, Math.random() * 1.6 - 0.8);
         c.add(b);
       }
       c.position.set(Math.random() * 180 - 54, 30 + Math.random() * 12, Math.random() * 180 - 54);
@@ -244,7 +271,7 @@ export class Renderer {
       sh.rotation.x = -Math.PI / 2;
       this.scene.add(sh);
       const umb = makeObject('sombrilla', 0.75);
-      umb.position.y = 2.1; umb.visible = false;
+      umb.position.y = 2.0; umb.visible = false;
       obj.add(umb);
       const lbl = document.createElement('div');
       lbl.className = 'lbl';
@@ -267,6 +294,7 @@ export class Renderer {
     this.scene.remove(this.water); this.water.geometry.dispose();
     this.scene.remove(this.seabed);
     this.scene.remove(this.clouds);
+    this.scene.remove(this.far);
     for (const c of this.chickens.values()) { this.scene.remove(c.obj); this.scene.remove(c.sh); c.lbl.remove(); }
     for (const o of this.objs.values()) this.scene.remove(o.mesh);
     this.chickens.clear(); this.objs.clear();
@@ -304,7 +332,7 @@ export class Renderer {
         }
         for (let i = 0; i < 14; i++) {
           const a = Math.random() * Math.PI * 2, s = Math.random() * 2;
-          P.add({ x: e.x + Math.cos(a) * e.r * 0.4, y: e.y + Math.random(), z: e.z + Math.sin(a) * e.r * 0.4, vx: Math.cos(a) * s, vy: 1.5 + Math.random() * 1.5, vz: Math.sin(a) * s, size: 0.5 + Math.random() * 0.6 * e.r * 0.5, color: ['#7a7a7a', '#9a9a9a', '#5f5f5f'][i % 3], life: 1.4 + Math.random(), grav: -0.6, drag: 1.5, grow: 1.2 });
+          P.add({ x: e.x + Math.cos(a) * e.r * 0.4, y: e.y + Math.random(), z: e.z + Math.sin(a) * e.r * 0.4, vx: Math.cos(a) * s, vy: 1.5 + Math.random() * 1.5, vz: Math.sin(a) * s, size: 0.4 + Math.random() * 0.5 * e.r * 0.5, color: ['#d8d2c8', '#bdb6ab', '#ece6dc'][i % 3], life: 1.2 + Math.random(), grav: -0.6, drag: 1.5, shrink: true });
         }
         const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.95, toneMapped: false }));
         ball.position.set(e.x, e.y, e.z);
@@ -407,7 +435,9 @@ export class Renderer {
       const vis = s.alive || s.dying;
       obj.visible = !!vis; sh.visible = !!vis;
       if (!vis) { c.lbl.style.display = 'none'; continue; }
-      obj.position.set(s.x, s.y, s.z);
+      let ry = s.y;
+      if (!s.air) { const gy0 = this.terrain.surfaceY(s.x, s.z, s.y + 0.7); if (Math.abs(gy0 - s.y) < 0.5) ry = gy0; }
+      obj.position.set(s.x, ry, s.z);
       obj.rotation.y = s.yaw;
       const body = obj.userData.body;
       const w = s.walking ? Math.sin(this.time * 14) : 0;
@@ -429,12 +459,12 @@ export class Renderer {
       sh.position.set(s.x, gy + 0.03, s.z);
       const hgt = Math.max(0, s.y - gy);
       sh.scale.setScalar(Math.max(0.3, 1 - hgt * 0.08));
-      sh.visible = gy > -50;
+      sh.visible = gy > -50 && !this.shadows;
       // jetpack
       if (s.jet && Math.random() < 0.8) this.parts.add({ x: s.x - Math.sin(s.yaw) * 0.4, y: s.y + 0.3, z: s.z - Math.cos(s.yaw) * 0.4, vx: 0, vy: -4, vz: 0, size: 0.16, color: Math.random() < 0.5 ? '#ffb020' : '#ff5a1f', life: 0.35, grav: 0, shrink: true });
       // etiqueta
       if (c.hp !== s.hp) { c.hp = s.hp; c.lbl.querySelector('.lh').textContent = s.hp; }
-      const p = this.project(s.x, s.y + CHICKEN_H + 0.55, s.z);
+      const p = this.project(s.x, ry + CHICKEN_H + 0.3, s.z);
       if (p && s.alive) {
         c.lbl.style.display = '';
         c.lbl.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
@@ -468,11 +498,11 @@ export class Renderer {
       let it = this.objs.get(o.id);
       if (!it) {
         const kind = PROJ_MODEL[o.kind] || 'egg';
-        const scale = { cajaArma: 1.5, cajaSalud: 1.5, cajaUtil: 1.5, barril: 1.3, mina: 1.3, paloma: 1.4, oro: 1.2, gallina: 0.95 }[o.kind] || 1;
+        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2 }[o.kind] || 1;
         const mesh = makeObject(kind, scale);
         this.scene.add(mesh);
         it = { mesh, kind: o.kind };
-        if (o.kind.startsWith('caja')) { it.para = makeObject('sombrilla', 0.9); it.para.position.y = 1.6 / scale; mesh.add(it.para); }
+        if (o.kind.startsWith('caja')) { it.para = makeObject('sombrilla', 0.85); it.para.position.y = 1.35; mesh.add(it.para); }
         if (o.kind === 'lapida' && o.name) { const l = document.createElement('div'); l.className = 'lbl tomb'; l.textContent = o.name; this.overlay.appendChild(l); it.lbl = l; }
         this.objs.set(o.id, it);
       }
@@ -565,7 +595,7 @@ export class Renderer {
     if (c.yaw !== undefined) this.camYaw = c.yaw;
     switch (c.m) {
       case 'follow':
-        pos = f.clone().add(back(c.yaw, 9.5)).add(new THREE.Vector3(0, 5.4, 0));
+        pos = f.clone().add(back(c.yaw, 9)).add(new THREE.Vector3(0, 6, 0));
         look = f.clone().add(new THREE.Vector3(Math.sin(c.yaw) * 3, 1.0, Math.cos(c.yaw) * 3));
         break;
       case 'aim': {
@@ -626,4 +656,3 @@ export class Renderer {
   }
 }
 
-export { objectGeometry };

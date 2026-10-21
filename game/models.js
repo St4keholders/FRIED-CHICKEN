@@ -1,202 +1,279 @@
-// Modelos en vóxeles hechos con código: pollitos, robots, armas, cajas y objetos
+// Modelos 3D redondeados hechos con código (estilo caricatura): pollitos, robots, armas y objetos
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-const PX = 0.1; // un "píxel" del modelo en unidades del mundo
-
-function rgb(h) {
-  const n = parseInt(h.slice(1), 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-function shade(h, f) {
-  const c = rgb(h).map((v) => Math.max(0, Math.min(1, v * f)));
-  return '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
-}
-
-// une muchas cajas en una sola geometría con colores por vértice
-export function boxesGeometry(boxes, unit = PX) {
-  const pos = [], nor = [], col = [], ind = [];
-  const faces = [
-    [[1, 0, 0], [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]], 0.8],
-    [[-1, 0, 0], [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], 0.8],
-    [[0, 1, 0], [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], 1.0],
-    [[0, -1, 0], [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], 0.55],
-    [[0, 0, 1], [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], 0.9],
-    [[0, 0, -1], [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]], 0.7],
-  ];
-  for (const b of boxes) {
-    const [x, y, z, w, h, d, c] = b;
-    const cc = rgb(c);
-    for (const [n, corners] of faces) {
-      const s = pos.length / 3;
-      for (const k of corners) {
-        pos.push((x + k[0] * w) * unit, (y + k[1] * h) * unit, (z + k[2] * d) * unit);
-        nor.push(n[0], n[1], n[2]);
-        col.push(cc[0], cc[1], cc[2]);
-      }
-      ind.push(s, s + 1, s + 2, s, s + 2, s + 3);
-    }
+// ---------------- geometrías y materiales compartidos ----------------
+const G = {
+  sphere: new THREE.SphereGeometry(1, 28, 18),
+  sphereLo: new THREE.SphereGeometry(1, 14, 10),
+  half: new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+  cone: new THREE.ConeGeometry(1, 1, 18),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 24),
+  cylOpen: new THREE.CylinderGeometry(1, 1, 1, 24, 1, true),
+  torus: new THREE.TorusGeometry(1, 0.22, 12, 32),
+  ico: new THREE.IcosahedronGeometry(1, 1),
+  rbox: new RoundedBoxGeometry(1, 1, 1, 3, 0.12),
+};
+const mats = new Map();
+export function mat(color, kind = 'phong') {
+  const key = `${kind}|${color}`;
+  if (!mats.has(key)) {
+    let m;
+    if (kind === 'basic') m = new THREE.MeshBasicMaterial({ color, toneMapped: false });
+    else if (kind === 'metal') m = new THREE.MeshPhongMaterial({ color, shininess: 90, specular: 0x888888 });
+    else if (kind === 'glow') m = new THREE.MeshPhongMaterial({ color, emissive: color, emissiveIntensity: 0.6, shininess: 60 });
+    else m = new THREE.MeshPhongMaterial({ color, shininess: 38, specular: 0x2a2a2a });
+    mats.set(key, m);
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(ind);
-  g.computeBoundingSphere();
-  return g;
+  return mats.get(key);
+}
+export const toonMat = mat('#ffffff');
+
+function shade(hex, f) {
+  const c = new THREE.Color(hex);
+  c.r = Math.min(1, c.r * f); c.g = Math.min(1, c.g * f); c.b = Math.min(1, c.b * f);
+  return '#' + c.getHexString();
 }
 
-export const toonMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+// una pieza: geometría + color + posición + escala (+ rotación)
+function P(parent, geo, color, pos, scale, rot, kind) {
+  const m = new THREE.Mesh(G[geo], mat(color, kind));
+  m.position.set(pos[0], pos[1], pos[2]);
+  if (typeof scale === 'number') m.scale.setScalar(scale); else m.scale.set(scale[0], scale[1], scale[2]);
+  if (rot) m.rotation.set(rot[0], rot[1], rot[2]);
+  parent.add(m);
+  return m;
+}
 
 // ---------------- pollito de goma ----------------
-const YEL = '#ffd23a', YEL2 = '#f2b51f', ORA = '#ff8a1f', BLK = '#1d1420', WHT = '#ffffff', PINK = '#ff9db5';
+const YEL = '#ffd23a', YEL2 = '#f6b820', BELLY = '#fff0a6', ORA = '#ff8a1f', BLK = '#1d1420', WHT = '#ffffff', PINK = '#ff9db5';
 
-function accessoryBoxes(acc, team, dark) {
-  const b = [];
+function eyes(g, y = 1.05, z = 0.34, robot = false) {
+  for (const s of [-1, 1]) {
+    if (robot) { P(g, 'sphere', '#ff2244', [s * 0.12, y, z + 0.06], [0.07, 0.07, 0.03], null, 'glow'); continue; }
+    P(g, 'sphere', WHT, [s * 0.125, y, z], [0.13, 0.16, 0.1]);
+    P(g, 'sphere', BLK, [s * 0.11, y - 0.01, z + 0.075], [0.065, 0.08, 0.04]);
+    P(g, 'sphere', WHT, [s * 0.09, y + 0.03, z + 0.11], 0.022, null, 'basic');
+  }
+}
+
+function accessory(g, acc, team) {
+  const dark = shade(team, 0.7);
   switch (acc) {
     case 'vueltiao':
-      b.push([-5, 12, -4, 10, 1, 9, '#f4ead2'], [-3, 13, -2, 6, 2, 5, '#f4ead2'], [-3, 13, -2.1, 6, 0.6, 5.2, BLK], [-5.1, 12, -4.1, 10.2, 0.4, 9.2, BLK]);
+      P(g, 'cyl', '#f4ead2', [0, 1.27, 0.03], [0.56, 0.035, 0.56]);
+      P(g, 'cyl', '#f4ead2', [0, 1.38, 0.03], [0.24, 0.2, 0.24]);
+      P(g, 'cyl', BLK, [0, 1.33, 0.03], [0.245, 0.03, 0.245]);
+      P(g, 'cyl', BLK, [0, 1.42, 0.03], [0.245, 0.03, 0.245]);
+      P(g, 'torus', BLK, [0, 1.275, 0.03], [0.5, 0.5, 0.12], [Math.PI / 2, 0, 0]);
       break;
     case 'gorra':
-      b.push([-3.2, 12, -2.2, 6.4, 1.6, 6.4, team], [-2.6, 11.6, 4, 5.2, 0.6, 3, dark]);
+      P(g, 'half', team, [0, 1.08, 0.04], [0.37, 0.3, 0.37]);
+      P(g, 'cyl', dark, [0, 1.11, 0.33], [0.22, 0.03, 0.28]);
+      P(g, 'sphere', WHT, [0, 1.38, 0.04], 0.05);
       break;
     case 'corona':
-      b.push([-2.6, 12, -1.6, 5.2, 1.2, 5.2, '#ffcc00']);
-      for (const [x, z] of [[-2.6, -1.6], [1.6, -1.6], [-2.6, 2.6], [1.6, 2.6], [-0.5, -1.6], [-0.5, 2.6]]) b.push([x, 13.2, z, 1, 1.2, 1, '#ffcc00']);
-      b.push([-0.5, 12.3, 3.5, 1, 0.8, 0.3, '#ff3355']);
+      P(g, 'cylOpen', '#ffcc00', [0, 1.36, 0.04], [0.21, 0.13, 0.21], null, 'metal');
+      for (let a = 0; a < 6; a++) P(g, 'cone', '#ffcc00', [Math.cos(a * Math.PI / 3) * 0.2, 1.48, 0.04 + Math.sin(a * Math.PI / 3) * 0.2], [0.05, 0.12, 0.05], null, 'metal');
+      P(g, 'sphere', '#ff3355', [0, 1.36, 0.26], 0.04, null, 'glow');
       break;
     case 'bandana':
-      b.push([-3.2, 10.4, -2.2, 6.4, 1.4, 6.4, team], [-1, 9.8, -3.6, 2, 1.6, 1.4, dark]);
+      P(g, 'torus', team, [0, 1.12, 0.05], [0.34, 0.34, 0.3], [Math.PI / 2 - 0.15, 0, 0]);
+      P(g, 'sphere', dark, [0, 1.1, -0.3], [0.07, 0.07, 0.07]);
+      P(g, 'cone', team, [0.05, 1.0, -0.36], [0.06, 0.18, 0.03], [0.4, 0, 0.3]);
       break;
     case 'gafas':
-      b.push([-3.1, 10, 3.9, 6.2, 0.5, 0.4, BLK], [-2.8, 9.2, 4, 2.4, 1.4, 0.4, BLK], [0.4, 9.2, 4, 2.4, 1.4, 0.4, BLK], [-3.2, 12, -2.2, 6.4, 0.8, 6.4, team]);
+      for (const s of [-1, 1]) P(g, 'cyl', BLK, [s * 0.13, 1.05, 0.43], [0.11, 0.03, 0.09], [Math.PI / 2, 0, 0], 'metal');
+      P(g, 'cyl', BLK, [0, 1.07, 0.43], [0.02, 0.1, 0.02], [0, 0, Math.PI / 2]);
+      P(g, 'half', team, [0, 1.12, 0.04], [0.33, 0.18, 0.33]);
       break;
     case 'copete':
-      for (let i = 0; i < 5; i++) b.push([-0.6, 12 + (i % 2) * 0.4, -2 + i * 1.2, 1.2, 2.6 - Math.abs(i - 2) * 0.4, 1.2, team]);
+      for (let i = 0; i < 5; i++) P(g, 'cone', team, [0, 1.36 - Math.abs(i - 2) * 0.03, -0.18 + i * 0.09], [0.06, 0.26 - Math.abs(i - 2) * 0.04, 0.06], [-0.3 + i * 0.12, 0, 0]);
       break;
     case 'chef':
-      b.push([-3, 12, -2, 6, 1, 6, WHT], [-3.6, 13, -2.6, 7.2, 3, 7.2, WHT], [-3.2, 12, -2.2, 6.4, 0.5, 6.4, team]);
+      P(g, 'cyl', WHT, [0, 1.36, 0.04], [0.22, 0.24, 0.22]);
+      P(g, 'sphere', WHT, [0, 1.55, 0.04], [0.29, 0.19, 0.29]);
+      P(g, 'cyl', team, [0, 1.27, 0.04], [0.225, 0.04, 0.225]);
       break;
     case 'zorro':
-      b.push([-3.2, 12, -2.2, 6.4, 1, 6.4, '#ff7a1a'], [-3, 13, -1.5, 1.6, 2, 1.6, '#ff7a1a'], [1.4, 13, -1.5, 1.6, 2, 1.6, '#ff7a1a'], [1.6, 10, 4.1, 1.4, 1.4, 0.3, '#ffd23f']);
+      for (const s of [-1, 1]) P(g, 'cone', '#ff7a1a', [s * 0.17, 1.33, 0], [0.09, 0.2, 0.06], [0, 0, -s * 0.25]);
+      P(g, 'torus', '#ff7a1a', [0, 1.16, 0.05], [0.33, 0.33, 0.2], [Math.PI / 2, 0, 0]);
       break;
     case 'casco':
     default:
-      b.push([-3.4, 11.6, -2.4, 6.8, 2, 6.8, team], [-3.6, 11.4, 3.4, 7.2, 0.6, 1.4, dark], [-0.5, 13.6, -2, 1, 0.6, 6, WHT]);
+      P(g, 'half', team, [0, 1.06, 0.05], [0.39, 0.33, 0.39]);
+      P(g, 'torus', dark, [0, 1.065, 0.05], [0.38, 0.38, 0.18], [Math.PI / 2, 0, 0]);
+      P(g, 'sphere', WHT, [0, 1.36, 0.05], [0.05, 0.03, 0.2]);
       break;
   }
-  return b;
+  if (acc === 'gafas' || acc === 'bandana' || acc === 'copete' || acc === 'zorro') {
+    for (let i = -1; i <= 1; i++) P(g, 'sphere', YEL, [i * 0.06, 1.34 + (i === 0 ? 0.04 : 0), 0.05], 0.06);
+  }
 }
 
-function chickenBoxes(team, acc) {
+function buildChicken(team, acc, robot) {
+  const g = new THREE.Group();
   const dark = shade(team, 0.7);
-  const b = [
-    // patas
-    [-2.6, 0, -0.5, 1.4, 1, 2.6, ORA], [1.2, 0, -0.5, 1.4, 1, 2.6, ORA],
-    // cuerpo redondeado
-    [-4, 1, -4, 8, 5, 8, YEL], [-3, 0.6, -3, 6, 0.5, 6, YEL2], [-3, 6, -3, 6, 1, 6, YEL],
-    [-4.4, 2, -3, 0.5, 3, 6, YEL], [3.9, 2, -3, 0.5, 3, 6, YEL],
-    // alas
-    [-5, 2.5, -2.5, 1, 3, 4.5, YEL2], [4, 2.5, -2.5, 1, 3, 4.5, YEL2],
-    // colita
-    [-1, 4, -5, 2, 2, 1.2, YEL2],
-    // cabeza
-    [-3, 7, -2, 6, 5, 6, YEL], [-2.5, 11.6, -1.5, 5, 0.6, 5, YEL],
-    // pico
-    [-1.4, 8.4, 4, 2.8, 1.2, 1.8, ORA], [-1, 7.9, 4, 2, 0.6, 1.4, '#e06a10'],
-    // ojos
-    [-2.4, 9.7, 3.9, 1.2, 1.4, 0.3, BLK], [1.2, 9.7, 3.9, 1.2, 1.4, 0.3, BLK],
-    [-2.1, 10.5, 3.95, 0.5, 0.5, 0.3, WHT], [1.5, 10.5, 3.95, 0.5, 0.5, 0.3, WHT],
-    // cachetes
-    [-3.1, 8.6, 3.2, 1, 0.8, 0.9, PINK], [2.1, 8.6, 3.2, 1, 0.8, 0.9, PINK],
-    // pañoleta del equipo
-    [-3.6, 6.2, -3.6, 7.2, 1, 7.2, team], [-1, 4.8, 3.4, 2, 1.6, 0.6, dark],
-  ];
-  return b.concat(accessoryBoxes(acc, team, dark));
+  if (robot) {
+    const MET = '#c3ccd6', MET2 = '#8d99a6';
+    for (const s of [-1, 1]) P(g, 'sphere', '#5d6873', [s * 0.17, 0.04, 0.08], [0.12, 0.06, 0.16], null, 'metal');
+    P(g, 'sphere', MET, [0, 0.47, 0], [0.46, 0.45, 0.46], null, 'metal');
+    P(g, 'cyl', MET2, [0, 0.47, 0], [0.47, 0.06, 0.47], null, 'metal');
+    P(g, 'sphere', '#ffcc00', [0, 0.45, 0.42], [0.1, 0.1, 0.05], null, 'glow');
+    for (const s of [-1, 1]) P(g, 'sphere', MET2, [s * 0.46, 0.5, 0], [0.09, 0.22, 0.18], [0, 0, s * 0.25], 'metal');
+    P(g, 'sphere', MET, [0, 0.98, 0.06], 0.35, null, 'metal');
+    P(g, 'rbox', '#18222c', [0, 1.03, 0.3], [0.42, 0.16, 0.12]);
+    eyes(g, 1.03, 0.3, true);
+    P(g, 'cone', '#ff9a3c', [0, 0.92, 0.44], [0.08, 0.18, 0.08], [Math.PI / 2, 0, 0], 'metal');
+    P(g, 'cyl', MET2, [0, 1.42, 0.06], [0.025, 0.2, 0.025], null, 'metal');
+    P(g, 'sphere', '#ff2244', [0, 1.55, 0.06], 0.06, null, 'glow');
+    for (const s of [-1, 1]) P(g, 'sphere', MET2, [s * 0.33, 1.0, 0.06], [0.04, 0.07, 0.07], null, 'metal');
+    P(g, 'torus', team, [0, 0.78, 0.02], [0.31, 0.31, 0.3], [Math.PI / 2, 0, 0]);
+    P(g, 'sphere', dark, [0, 0.72, 0.31], 0.07);
+    return g;
+  }
+  for (const s of [-1, 1]) P(g, 'sphere', ORA, [s * 0.17, 0.035, 0.1], [0.12, 0.05, 0.17]);
+  P(g, 'sphere', YEL, [0, 0.47, 0], [0.47, 0.44, 0.47]);
+  P(g, 'sphere', BELLY, [0, 0.42, 0.28], [0.32, 0.28, 0.2]);
+  for (const s of [-1, 1]) P(g, 'sphere', YEL2, [s * 0.45, 0.5, -0.02], [0.1, 0.24, 0.2], [0, 0, s * 0.35]);
+  P(g, 'cone', YEL2, [0, 0.62, -0.45], [0.09, 0.22, 0.09], [-2.1, 0, 0]);
+  P(g, 'sphere', YEL, [0, 0.98, 0.06], 0.36);
+  eyes(g);
+  P(g, 'cone', ORA, [0, 0.93, 0.47], [0.1, 0.22, 0.08], [Math.PI / 2, 0, 0]);
+  P(g, 'cone', '#e06a10', [0, 0.88, 0.43], [0.07, 0.14, 0.05], [Math.PI / 2 + 0.2, 0, 0]);
+  for (const s of [-1, 1]) P(g, 'sphere', PINK, [s * 0.24, 0.9, 0.29], [0.06, 0.04, 0.03]);
+  P(g, 'torus', team, [0, 0.77, 0.02], [0.32, 0.32, 0.3], [Math.PI / 2, 0, 0]);
+  P(g, 'sphere', dark, [0, 0.71, 0.31], [0.08, 0.07, 0.06]);
+  accessory(g, acc, team);
+  return g;
 }
 
-function robotBoxes(team) {
-  const MET = '#b8c4cf', MET2 = '#8693a0', dark = shade(team, 0.7);
-  return [
-    [-2.6, 0, -0.5, 1.4, 1.2, 2.6, '#5d6873'], [1.2, 0, -0.5, 1.4, 1.2, 2.6, '#5d6873'],
-    [-4, 1, -4, 8, 6, 8, MET], [-4.3, 2.5, -3, 0.4, 3, 6, MET2], [3.9, 2.5, -3, 0.4, 3, 6, MET2],
-    [-5, 2.5, -2, 1, 3, 4, MET2], [4, 2.5, -2, 1, 3, 4, MET2],
-    [-1.2, 3, 3.9, 2.4, 2.4, 0.4, '#ffcc00'], [-0.6, 3.6, 4.1, 1.2, 1.2, 0.3, '#ff5500'],
-    [-3, 7, -2, 6, 5, 6, MET], [-2.6, 9.2, 3.9, 5.2, 1.6, 0.4, '#18222c'], [-2, 9.6, 4.1, 1.4, 0.8, 0.3, '#ff2244'], [0.6, 9.6, 4.1, 1.4, 0.8, 0.3, '#ff2244'],
-    [-1.4, 7.8, 4, 2.8, 1, 1.4, '#ff9a3c'],
-    [-0.3, 12, -0.3, 0.6, 2.4, 0.6, MET2], [-0.7, 14.2, -0.7, 1.4, 1.4, 1.4, '#ff2244'],
-    [-3.2, 6.6, -3.2, 0.8, 0.8, 0.8, MET2], [2.4, 6.6, -3.2, 0.8, 0.8, 0.8, MET2],
-    [-3.6, 6.2, -3.6, 7.2, 1, 7.2, team], [-1, 4.8, 3.4, 2, 1.6, 0.6, dark],
-  ];
-}
-
-const geoCache = new Map();
-export function chickenGeometry(team, acc, robot) {
-  const key = `${team}|${acc}|${robot ? 1 : 0}`;
-  if (!geoCache.has(key)) geoCache.set(key, boxesGeometry(robot ? robotBoxes(team) : chickenBoxes(team, acc)));
-  return geoCache.get(key);
-}
-
-// pollito listo para la escena: un grupo con el cuerpo (que se anima) y un arma en la mano
+// pollito listo para la escena: grupo con el cuerpo (que se anima) y el arma
 export function makeChicken(team, acc, robot) {
   const root = new THREE.Group();
-  const body = new THREE.Mesh(chickenGeometry(team, acc, robot), toonMat);
+  const body = buildChicken(team, acc, robot);
   root.add(body);
-  const gun = new THREE.Mesh(boxesGeometry([[-0.9, -0.9, 0, 1.8, 1.8, 7, '#5d6873'], [-1.2, -1.2, 5.5, 2.4, 2.4, 1.5, '#ff8a1f'], [-0.4, -2.6, 1.5, 0.8, 1.8, 1, '#3b2a1a']]), toonMat);
-  gun.position.set(-0.45, 0.45, 0.15);
+  const gun = new THREE.Group();
+  P(gun, 'cyl', '#5d6873', [0, 0, 0.22], [0.075, 0.62, 0.075], [Math.PI / 2, 0, 0], 'metal');
+  P(gun, 'cyl', '#ff8a1f', [0, 0, 0.55], [0.1, 0.1, 0.1], [Math.PI / 2, 0, 0]);
+  P(gun, 'cyl', '#3b2a1a', [0, -0.1, 0.12], [0.035, 0.16, 0.035]);
+  gun.position.set(-0.42, 0.6, 0.12);
   gun.visible = false;
   root.add(gun);
   root.userData = { body, gun };
+  root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return root;
 }
 
 // ---------------- objetos ----------------
-function egg(c1, c2) {
-  return [[-1.5, 0, -1.5, 3, 4, 3, c1], [-2, 1, -1, 4, 2, 2, c1], [-1, 1, -2, 2, 2, 4, c1], [-1, 4, -1, 2, 0.6, 2, c2]];
-}
-
-const MODEL_BOXES = {
-  egg: () => egg('#fff3dc', '#ffe1a8'),
-  granada: () => egg('#7fd14b', '#3e8e1e').concat([[-0.3, 4.4, -0.3, 0.6, 1.4, 0.6, '#5a3a1a']]),
-  oro: () => egg('#ffd700', '#fff2a8').concat([[-2.2, 1.6, -0.2, 4.4, 0.4, 0.4, '#fff8d0']]),
-  maiz: () => [[-1.2, 0, -1.2, 2.4, 6, 2.4, '#ffd23f'], [-1.6, -0.5, -1.6, 3.2, 1.4, 3.2, '#7bc043'], [-0.6, 6, -0.6, 1.2, 1, 1.2, '#7bc043']],
-  pop: () => [[-0.8, 0, -0.8, 1.6, 1.6, 1.6, '#fffbe8'], [-0.5, 0.8, -1.1, 1, 1, 0.6, '#fff1b8']],
-  paloma: () => [[-1.5, 0, -2.5, 3, 2.4, 5, '#9aa3ad'], [-1.2, 1.6, 2, 2.4, 2, 2, '#b4bcc5'], [-0.4, 2, 4, 0.8, 0.6, 1, '#ff9a3c'], [-5, 1.4, -1, 3.6, 0.5, 2.6, '#7d8792'], [1.4, 1.4, -1, 3.6, 0.5, 2.6, '#7d8792'], [-0.8, 2.3, 3.7, 0.4, 0.4, 0.2, '#111'], [0.4, 2.3, 3.7, 0.4, 0.4, 0.2, '#111']],
-  bomba: () => [[-0.8, 0, -0.8, 1.6, 1.6, 1.6, '#4a4a4a'], [-0.2, 1.6, -0.2, 0.4, 0.6, 0.4, '#ff7a00']],
-  vela: () => [[-1, 0, -1, 2, 7, 2, '#ff6fae'], [-1.05, 1, -1.05, 2.1, 0.8, 2.1, '#ffffff'], [-1.05, 3.5, -1.05, 2.1, 0.8, 2.1, '#ffffff'], [-0.15, 7, -0.15, 0.3, 1, 0.3, '#333'], [-0.5, 8, -0.5, 1, 1.4, 1, '#ffb000']],
-  mina: () => [[-2.5, 0, -2.5, 5, 1.2, 5, '#9b6b3a'], [-3, 0.8, -1.5, 6, 1, 3, '#b07a44'], [-1.5, 0.8, -3, 3, 1, 6, '#b07a44'], [-1.2, 1, -1.2, 2.4, 2.6, 2.4, '#fff3dc'], [-0.4, 3.6, -0.4, 0.8, 0.6, 0.8, '#ff2222']],
-  gallina: () => [
-    [-2.4, 0, -0.5, 1.2, 1.4, 2.4, ORA], [1.2, 0, -0.5, 1.2, 1.4, 2.4, ORA],
-    [-5, 1.4, -6, 10, 8, 11, '#fbfbf5'], [-6, 3, -4, 1.2, 4, 7, '#ececdf'], [4.8, 3, -4, 1.2, 4, 7, '#ececdf'], [-2, 6, -8, 4, 6, 2.5, '#fbfbf5'],
-    [-3.2, 8, 3, 6.4, 6, 5, '#fbfbf5'], [-1, 14, 4, 2, 2.4, 3, '#ff2b3a'], [-1.2, 10, 8, 2.4, 1.4, 2.4, ORA], [-0.6, 8.4, 7.6, 1.2, 1.6, 1, '#ff2b3a'],
-    [-2.6, 11.4, 7.9, 1.2, 1.2, 0.3, BLK], [1.4, 11.4, 7.9, 1.2, 1.2, 0.3, BLK], [-3.4, 12.6, 3.4, 6.8, 0.8, 4.4, '#ff6fae'],
-  ],
-  guacamaya: () => [[-1.4, 0, -3, 2.8, 2.6, 6, '#e3172b'], [-1.2, 1.2, 2.6, 2.4, 2.4, 2.4, '#e3172b'], [-0.5, 1.2, 4.8, 1, 1.4, 1.2, '#f5f0e0'], [-5, 1.2, -1.5, 3.8, 0.5, 3.4, '#1e74ff'], [1.2, 1.2, -1.5, 3.8, 0.5, 3.4, '#1e74ff'], [-4.2, 1.25, -1.2, 2, 0.5, 2.4, '#ffd23f'], [1.6, 1.25, -1.2, 2, 0.5, 2.4, '#ffd23f'], [-0.6, 0.6, -6, 1.2, 0.6, 3.2, '#1e74ff'], [-0.9, 2.6, 3.8, 0.4, 0.4, 0.2, '#111'], [0.5, 2.6, 3.8, 0.4, 0.4, 0.2, '#111']],
-  barril: () => [[-2.6, 0, -2.6, 5.2, 7, 5.2, '#e5383b'], [-2.8, 1, -2.8, 5.6, 0.8, 5.6, '#7a1a1c'], [-2.8, 5.2, -2.8, 5.6, 0.8, 5.6, '#7a1a1c'], [-1, 2.4, 2.65, 2, 2, 0.3, '#ffd23f'], [-0.4, 2.8, 2.7, 0.8, 1.2, 0.3, '#111']],
-  cajaArma: () => [[-3, 0, -3, 6, 6, 6, '#c47a3a'], [-3.1, 2.5, -3.1, 6.2, 1, 6.2, '#8a4f1f'], [-0.5, 0, -3.1, 1, 6, 6.2, '#8a4f1f'], [-1.2, 3.6, 3.05, 2.4, 1.6, 0.3, '#ffd23f'], [-0.5, 1.4, 3.05, 1, 1, 0.3, '#ffd23f']],
-  cajaSalud: () => [[-3, 0, -3, 6, 6, 6, '#ffffff'], [-0.8, 0.8, 3.02, 1.6, 4.4, 0.3, '#ff2b3a'], [-2.2, 2.2, 3.02, 4.4, 1.6, 0.3, '#ff2b3a'], [-0.8, 6, -0.8, 1.6, 0.3, 1.6, '#ff2b3a'], [3.02, 2.2, -0.8, 0.3, 1.6, 1.6, '#ff2b3a'], [-3.32, 2.2, -0.8, 0.3, 1.6, 1.6, '#ff2b3a']],
-  cajaUtil: () => [[-3, 0, -3, 6, 6, 6, '#3d8bfd'], [-3.1, 2.5, -3.1, 6.2, 1, 6.2, '#1c5fc7'], [-1, 2, 3.05, 2, 2, 0.3, '#ffffff']],
-  sombrilla: () => {
-    const b = [];
-    const cols = ['#ff4757', '#ffffff'];
-    for (let r = 0; r < 4; r++) for (let a = 0; a < 8; a++) {
-      const ang = (a / 8) * Math.PI * 2, rad = 7 - r * 1.8;
-      b.push([Math.cos(ang) * rad - 1.4, r * 1.2, Math.sin(ang) * rad - 1.4, 2.8, 1.2, 2.8, cols[(a + r) % 2]]);
-    }
-    b.push([-0.2, -9, -0.2, 0.4, 9, 0.4, '#444']);
-    return b;
+const BUILDERS = {
+  egg: (g) => P(g, 'sphere', '#fff3dc', [0, 0.2, 0], [0.15, 0.2, 0.15]),
+  granada: (g) => {
+    P(g, 'sphere', '#6cc04a', [0, 0.17, 0], 0.17);
+    P(g, 'cyl', '#3e8e1e', [0, 0.17, 0], [0.175, 0.04, 0.175]);
+    P(g, 'cyl', '#8d99a6', [0, 0.36, 0], [0.04, 0.06, 0.04], null, 'metal');
+    P(g, 'torus', '#c3ccd6', [0.06, 0.4, 0], [0.05, 0.05, 0.05], null, 'metal');
   },
-  lapida: () => [[-2, 0, -1, 4, 5, 2, '#cfd6dd'], [-1.5, 5, -1, 3, 1, 2, '#cfd6dd'], [-0.8, 6, -1, 1.6, 0.6, 2, '#cfd6dd'], [-0.3, 2, 1.02, 0.6, 2.4, 0.2, '#7d8792'], [-1, 3.4, 1.02, 2, 0.6, 0.2, '#7d8792']],
+  oro: (g) => {
+    P(g, 'sphere', '#ffd700', [0, 0.24, 0], [0.18, 0.24, 0.18], null, 'glow');
+    P(g, 'cone', '#fff2a8', [0, 0.52, 0], [0.04, 0.1, 0.04], null, 'glow');
+  },
+  maiz: (g) => {
+    P(g, 'sphere', '#ffd23f', [0, 0.25, 0], [0.11, 0.25, 0.11]);
+    for (const s of [-1, 1]) P(g, 'cone', '#7bc043', [s * 0.06, 0.15, 0], [0.07, 0.32, 0.04], [0, 0, s * 0.4]);
+  },
+  pop: (g) => P(g, 'ico', '#fffbe8', [0, 0.08, 0], 0.09),
+  paloma: (g) => {
+    P(g, 'sphere', '#9aa3ad', [0, 0.16, 0], [0.18, 0.16, 0.3]);
+    P(g, 'sphere', '#b4bcc5', [0, 0.3, 0.26], 0.11);
+    P(g, 'cone', '#ff9a3c', [0, 0.29, 0.4], [0.03, 0.08, 0.03], [Math.PI / 2, 0, 0]);
+    for (const s of [-1, 1]) {
+      P(g, 'sphere', '#7d8792', [s * 0.3, 0.2, 0], [0.3, 0.03, 0.15]);
+      P(g, 'sphere', BLK, [s * 0.05, 0.33, 0.34], 0.02);
+    }
+  },
+  bomba: (g) => { P(g, 'sphere', '#3a3a3a', [0, 0.1, 0], 0.1); P(g, 'cyl', '#ff7a00', [0, 0.22, 0], [0.015, 0.06, 0.015]); },
+  vela: (g) => {
+    P(g, 'cyl', '#ff6fae', [0, 0.3, 0], [0.09, 0.6, 0.09]);
+    for (const y of [0.15, 0.4]) P(g, 'cyl', WHT, [0, y, 0], [0.095, 0.06, 0.095]);
+    P(g, 'cyl', '#333', [0, 0.64, 0], [0.01, 0.08, 0.01]);
+    P(g, 'cone', '#ffb000', [0, 0.75, 0], [0.05, 0.14, 0.05], null, 'basic');
+  },
+  mina: (g) => {
+    P(g, 'torus', '#9b6b3a', [0, 0.07, 0], [0.24, 0.24, 0.5], [Math.PI / 2, 0, 0]);
+    P(g, 'sphere', '#b07a44', [0, 0.04, 0], [0.22, 0.05, 0.22]);
+    P(g, 'sphere', '#fff3dc', [0, 0.17, 0], [0.12, 0.15, 0.12]);
+    P(g, 'sphere', '#ff2222', [0, 0.33, 0], 0.035, null, 'glow');
+  },
+  gallina: (g) => {
+    for (const s of [-1, 1]) P(g, 'cyl', ORA, [s * 0.18, 0.1, 0.05], [0.03, 0.2, 0.03]);
+    P(g, 'sphere', '#fbfbf5', [0, 0.55, -0.05], [0.48, 0.42, 0.58]);
+    for (const s of [-1, 1]) P(g, 'sphere', '#ececdf', [s * 0.46, 0.58, -0.05], [0.1, 0.25, 0.35]);
+    P(g, 'cone', '#fbfbf5', [0, 0.8, -0.58], [0.16, 0.35, 0.08], [-0.6, 0, 0]);
+    P(g, 'sphere', '#fbfbf5', [0, 1.02, 0.38], 0.27);
+    for (let i = -1; i <= 1; i++) P(g, 'sphere', '#ff2b3a', [0, 1.31 + (i === 0 ? 0.04 : 0), 0.38 + i * 0.09], 0.07);
+    P(g, 'cone', ORA, [0, 1.0, 0.68], [0.08, 0.16, 0.07], [Math.PI / 2, 0, 0]);
+    P(g, 'sphere', '#ff2b3a', [0, 0.87, 0.6], [0.05, 0.08, 0.04]);
+    eyes(g, 1.08, 0.58);
+    P(g, 'torus', '#ff6fae', [0, 0.84, 0.36], [0.22, 0.22, 0.3], [Math.PI / 2, 0, 0]);
+  },
+  guacamaya: (g) => {
+    P(g, 'sphere', '#e3172b', [0, 0.15, 0], [0.15, 0.15, 0.3]);
+    P(g, 'sphere', '#e3172b', [0, 0.25, 0.26], 0.12);
+    P(g, 'cone', '#f5f0e0', [0, 0.22, 0.4], [0.05, 0.12, 0.05], [Math.PI / 2 + 0.4, 0, 0]);
+    for (const s of [-1, 1]) {
+      P(g, 'sphere', '#1e74ff', [s * 0.3, 0.17, -0.02], [0.3, 0.03, 0.15]);
+      P(g, 'sphere', '#ffd23f', [s * 0.2, 0.18, 0.0], [0.15, 0.035, 0.1]);
+      P(g, 'sphere', BLK, [s * 0.06, 0.29, 0.34], 0.02);
+    }
+    P(g, 'cone', '#1e74ff', [0, 0.12, -0.45], [0.06, 0.38, 0.03], [-Math.PI / 2, 0, 0]);
+  },
+  barril: (g) => {
+    P(g, 'cyl', '#e5383b', [0, 0.36, 0], [0.3, 0.72, 0.3]);
+    for (const y of [0.12, 0.6]) P(g, 'torus', '#7a1a1c', [0, y, 0], [0.3, 0.3, 0.3], [Math.PI / 2, 0, 0]);
+    P(g, 'cyl', '#ffd23f', [0, 0.36, 0.29], [0.11, 0.02, 0.11], [Math.PI / 2, 0, 0]);
+    P(g, 'cone', '#111', [0, 0.37, 0.305], [0.05, 0.08, 0.01], [Math.PI / 2, 0, 0]);
+  },
+  cajaArma: (g) => {
+    P(g, 'rbox', '#c47a3a', [0, 0.3, 0], 0.6);
+    P(g, 'rbox', '#8a4f1f', [0, 0.3, 0], [0.62, 0.12, 0.62]);
+    P(g, 'sphere', '#ffd23f', [0, 0.42, 0.31], [0.08, 0.08, 0.02]);
+    P(g, 'sphere', '#ffd23f', [0, 0.22, 0.31], [0.04, 0.04, 0.02]);
+  },
+  cajaSalud: (g) => {
+    P(g, 'rbox', '#ffffff', [0, 0.3, 0], 0.6);
+    for (const [r, p] of [[[0, 0, 0], [0, 0.3, 0.305]], [[0, Math.PI / 2, 0], [0.305, 0.3, 0]], [[0, Math.PI / 2, 0], [-0.305, 0.3, 0]], [[0, 0, 0], [0, 0.3, -0.305]], [[Math.PI / 2, 0, 0], [0, 0.605, 0]]]) {
+      P(g, 'rbox', '#ff2b3a', p, [0.12, 0.38, 0.02], r);
+      P(g, 'rbox', '#ff2b3a', p, [0.38, 0.12, 0.02], r);
+    }
+  },
+  cajaUtil: (g) => {
+    P(g, 'rbox', '#3d8bfd', [0, 0.3, 0], 0.6);
+    P(g, 'rbox', '#1c5fc7', [0, 0.3, 0], [0.62, 0.12, 0.62]);
+    P(g, 'sphere', '#ffffff', [0, 0.3, 0.31], [0.1, 0.1, 0.02]);
+  },
+  sombrilla: (g) => {
+    for (let i = 0; i < 8; i++) {
+      const geo = new THREE.SphereGeometry(0.75, 6, 6, (i / 8) * Math.PI * 2, Math.PI / 4, 0, Math.PI / 2.4);
+      const m = new THREE.Mesh(geo, mat(i % 2 ? '#ffffff' : '#ff4757'));
+      g.add(m);
+    }
+    P(g, 'cyl', '#444', [0, -0.45, 0], [0.02, 0.9, 0.02]);
+  },
+  lapida: (g) => {
+    P(g, 'rbox', '#cfd6dd', [0, 0.28, 0], [0.42, 0.56, 0.16]);
+    P(g, 'sphere', '#cfd6dd', [0, 0.56, 0], [0.21, 0.12, 0.08]);
+    P(g, 'rbox', '#8d99a6', [0, 0.36, 0.085], [0.05, 0.24, 0.02]);
+    P(g, 'rbox', '#8d99a6', [0, 0.4, 0.085], [0.16, 0.05, 0.02]);
+  },
 };
 
-const objCache = new Map();
-export function objectGeometry(kind) {
-  if (!objCache.has(kind)) objCache.set(kind, boxesGeometry((MODEL_BOXES[kind] || MODEL_BOXES.egg)()));
-  return objCache.get(kind);
-}
 export function makeObject(kind, scale = 1) {
-  const m = new THREE.Mesh(objectGeometry(kind), toonMat);
-  m.scale.setScalar(scale);
-  return m;
+  const g = new THREE.Group();
+  (BUILDERS[kind] || BUILDERS.egg)(g);
+  g.scale.setScalar(scale);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
 }
 
 // qué modelo usa cada tipo de proyectil u objeto
