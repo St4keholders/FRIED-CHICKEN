@@ -1,39 +1,21 @@
-// game/peeropts.js - PeerJS configuration from URL params or public cloud defaults
-
-export function getPeerOptions(customParams) {
-  const isBrowser = typeof window !== 'undefined';
-  let params = null;
-
-  if (customParams instanceof URLSearchParams) {
-    params = customParams;
-  } else if (isBrowser) {
-    params = new URLSearchParams(window.location.search);
+// Opciones del servidor de conexión (PeerJS). Por defecto usa el servidor público gratuito.
+// Para pruebas locales se puede pasar ?peerhost=...&peerport=...&peerpath=...&peersecure=1
+export function peerOptionsFromURL() {
+  const q = new URLSearchParams(window.location.search);
+  const o = { debug: 0 };
+  if (q.get('peerhost')) {
+    o.host = q.get('peerhost');
+    o.port = Number(q.get('peerport') || 9000);
+    o.path = q.get('peerpath') || '/';
+    o.secure = q.get('peersecure') === '1';
   }
+  return o;
+}
 
-  const host = params?.get('peerhost');
-  const port = params?.get('peerport');
-  const path = params?.get('peerpath');
-  const secure = params?.get('peersecure');
-
-  if (host) {
-    const opts = {
-      host,
-      port: port ? parseInt(port, 10) : 443,
-      path: path || '/',
-      secure: secure === '1' || secure === 'true',
-      debug: 1,
-    };
-    return opts;
-  }
-
-  // Default PeerJS public cloud server
-  return {
-    debug: 1,
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-      ]
-    }
-  };
+export function peerParamsString() {
+  const q = new URLSearchParams(window.location.search);
+  const keep = new URLSearchParams();
+  for (const k of ['peerhost', 'peerport', 'peerpath', 'peersecure']) if (q.get(k)) keep.set(k, q.get(k));
+  const s = keep.toString();
+  return s ? '&' + s : '';
 }

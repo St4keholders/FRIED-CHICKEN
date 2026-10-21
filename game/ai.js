@@ -1,177 +1,250 @@
-// game/ai.js - CPU artificial intelligence with ballistic trajectory simulation, difficulties, and visible aiming
+// La CPU: prueba tiros simulando la misma física del juego y elige el mejor
+import { BOOM } from './match.js';
+import { CHICKEN_H, weaponById } from './constants.js';
+import { quote } from './voices.js';
 
-import { WEAPONS } from './constants.js';
+const NOISE = [
+  { yaw: 0.13, pitch: 0.17, power: 0.16 }, // fácil
+  { yaw: 0.04, pitch: 0.06, power: 0.06 }, // normal
+  { yaw: 0.012, pitch: 0.015, power: 0.015 }, // difícil
+];
+const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
 
-export class CPUController {
-  constructor(difficulty = 'normal') {
-    this.difficulty = difficulty; // 'facil', 'normal', 'dificil'
-    this.state = 'IDLE'; // IDLE, THINKING, AIMING, CHARGING, FIRED, RETREATING
-    this.timer = 0;
-    this.target = null;
-    this.selectedWeapon = 'bazuca';
-    this.targetPitch = 0.3;
-    this.targetYaw = 0;
-    this.targetPower = 0.7;
-    this.currentPitch = 0;
-    this.currentYaw = 0;
-    this.chargeTime = 0;
-    this.targetChargeDuration = 0;
-    this.onFire = null;
-    this.onMove = null;
-    this.onWeaponSelect = null;
-    this.onSay = null;
+export class CpuBrain {
+  constructor(match, level) {
+    this.m = match;
+    this.level = level;
+    this.state = 'think';
+    this.t = 0;
+    this.plan = null;
+    this.gen = null;
+    this.best = null;
+    this.walked = 0;
+    this.r = Math.random;
   }
 
-  startTurn(activeChicken, enemies, terrain, wind, inventory) {
-    this.activeChicken = activeChicken;
-    this.enemies = enemies.filter((e) => e.alive);
-    this.terrain = terrain;
-    this.wind = wind;
-    this.inventory = inventory;
-    this.state = 'THINKING';
-    this.timer = 1.0 + Math.random() * 0.8;
+  begin() {
+    this.state = 'think';
+    this.t = 0;
+    this.plan = null;
+    this.best = null;
+    this.walked = 0;
+    this.gen = this.search();
+    if (this.r() < 0.35) this.m.emit({ k: 'say', id: this.m.turn.ch, text: quote('cpu') });
   }
 
-  update(dt, callbacks = {}) {
-    if (this.state === 'IDLE' || !this.activeChicken || !this.activeChicken.alive) return;
+  me() { return this.m.activeChicken(); }
+  enemies() {
+    const me = this.me();
+    const al = this.m.alliance(me.team);
+    return this.m.chickens.filter((c) => c.alive && this.m.alliance(c.team) !== al);
+  }
 
-    this.timer -= dt;
+  // daño que haría una explosión en (x, y, z)
+  scoreAt(x, y, z, b, mult = 1) {
+    const me = this.me();
+    const al = this.m.alliance(me.team);
+    let s = 0;
+    const RR = b.r * 1.55;
+    for (const c of this.m.chickens) {
+      if (!c.alive) continue;
+      const d = Math.hypot(c.x - x, c.y + CHICKEN_H * 0.5 - y, c.z - z);
+      if (d > RR) continue;
+      const dmg = b.d * mult * (0.35 + 0.65 * (1 - d / RR));
+      // cerca del agua el empujón vale más
+      const nearWater = c.y < this.m.water + 1.6 ? 1.4 : 1;
+      if (c === me) s -= dmg * 2.2;
+      else if (this.m.alliance(c.team) === al) s -= dmg * 1.6;
+      else s += Math.min(dmg, c.hp) * nearWater + (dmg >= c.hp ? 40 : 0);
+    }
+    return s;
+  }
 
-    if (this.state === 'THINKING') {
-      if (this.timer <= 0) {
-        this._decideStrategy(callbacks);
+  simShot(kind, yaw, pitch, power, fuse) {
+    const me = this.me();
+    const cp = Math.cos(pitch);
+    const dir = { x: Math.sin(yaw) * cp, y: Math.sin(pitch), z: Math.cos(yaw) * cp };
+    const sp = 5 + power * 21;
+    const o = { kind, x: me.x + dir.x * 0.6, y: me.y + 0.75 + dir.y * 0.6, z: me.z + dir.z * 0.6, vx: dir.x * sp, vy: dir.y * sp, vz: dir.z * sp, src: me.id, fuse, age: 0, yaw: 0 };
+    const dt = 1 / 30;
+    for (let i = 0; i < 180; i++) {
+      o.age += dt;
+      const r = this.m.projStep(o, dt, { chickens: this.m.chickens });
+      if (r === 'water') return null;
+      if (r === 'hit' || r === 'fuse') return { x: o.x, y: o.y, z: o.z };
+    }
+    return null;
+  }
+
+  // búsqueda repartida en varios cuadros para no trabar el juego
+  *search() {
+    const m = this.m, me = this.me();
+    const team = m.teams[me.team];
+    const inv = team.inv;
+    const has = (w) => inv[w] !== 0 && inv[w] !== undefined;
+    const ens = this.enemies().sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z)).slice(0, 3);
+    let best = { score: -1e9 };
+    const consider = (p) => { if (p.score > best.score) best = p; };
+    const mult = team.dd ? 2 : 1;
+    if (!ens.length) { this.best = { kind: 'skip', score: 0 }; return; }
+
+    // cuerpo a cuerpo: la chancla cerca del agua es mortal
+    for (const e of ens) {
+      const d = Math.hypot(e.x - me.x, e.z - me.z);
+      if (d < 1.35 && Math.abs(e.y - me.y) < 1.2) {
+        const yaw = Math.atan2(e.x - me.x, e.z - me.z);
+        const w = has('chancla') ? 'chancla' : 'picotazo';
+        consider({ kind: 'melee', w, yaw, score: 30 * mult + (e.y < m.water + 4 ? 70 : 10) });
       }
-    } else if (this.state === 'AIMING') {
-      // Smoothly rotate toward target yaw and pitch
-      const rotSpeed = 2.5;
-      const dYaw = this.targetYaw - this.currentYaw;
-      const dPitch = this.targetPitch - this.currentPitch;
-
-      this.currentYaw += Math.sign(dYaw) * Math.min(Math.abs(dYaw), rotSpeed * dt);
-      this.currentPitch += Math.sign(dPitch) * Math.min(Math.abs(dPitch), rotSpeed * dt);
-
-      if (callbacks.onAim) {
-        callbacks.onAim(this.currentPitch, this.currentYaw);
-      }
-
-      if (Math.abs(dYaw) < 0.08 && Math.abs(dPitch) < 0.08 && this.timer <= 0) {
-        this.state = 'CHARGING';
-        this.chargeTime = 0;
-        this.targetChargeDuration = this.targetPower * 1.5;
-      }
-    } else if (this.state === 'CHARGING') {
-      this.chargeTime += dt;
-      if (callbacks.onCharge) {
-        callbacks.onCharge(Math.min(1.0, this.chargeTime / 1.5));
-      }
-
-      if (this.chargeTime >= this.targetChargeDuration) {
-        this.state = 'FIRED';
-        if (callbacks.onFire) {
-          callbacks.onFire({
-            weaponId: this.selectedWeapon,
-            pitch: this.targetPitch,
-            yaw: this.targetYaw,
-            power: this.targetPower,
-            targetX: this.target?.x,
-            targetZ: this.target?.z,
-          });
+    }
+    // escopeta: línea directa
+    for (const e of ens) {
+      const dx = e.x - me.x, dy = e.y + 0.6 - (me.y + 0.75), dz = e.z - me.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d > 26) continue;
+      const dir = { x: dx / d, y: dy / d, z: dz / d };
+      const hit = m.ray(me.x, me.y + 0.75, me.z, dir, d - 0.4);
+      if (!hit) consider({ kind: 'direct', w: 'escopeta', yaw: Math.atan2(dx, dz), pitch: Math.asin(dir.y), score: Math.min(50 * mult, e.hp + 30) * 0.9 });
+    }
+    yield;
+    // tiros con parábola
+    const weapons = ['bazuca', 'granada'];
+    if (has('maiz') && this.level >= 1) weapons.push('maiz');
+    if (has('oro') && this.level >= 1) weapons.push('oro');
+    let count = 0;
+    for (const w of weapons) {
+      const b = BOOM[w];
+      for (const e of ens) {
+        const base = Math.atan2(e.x - me.x, e.z - me.z);
+        for (const dyaw of [0, -0.07, 0.07, -0.16, 0.16]) {
+          if (w !== 'bazuca' && Math.abs(dyaw) > 0.1) continue;
+          for (let pitch = -0.25; pitch <= 1.35; pitch += 0.1) {
+            for (let power = 0.3; power <= 1.001; power += 0.07) {
+              const fuse = w === 'oro' ? 3 : 3;
+              const hit = this.simShot(w, base + dyaw, pitch, power, fuse);
+              if (hit) {
+                let s = this.scoreAt(hit.x, hit.y, hit.z, b, mult);
+                if (w === 'oro') s -= 25; // guardar el huevo de oro para algo bueno
+                if (w === 'maiz') s = s * 1.1 - 10;
+                consider({ kind: 'power', w, yaw: base + dyaw, pitch, power, fuse, score: s });
+              }
+              if (++count % 60 === 0) yield;
+            }
+          }
         }
       }
-    } else if (this.state === 'RETREATING') {
-      // Walk away from nearest enemy or danger
-      if (callbacks.onMove && this.timer > 0) {
-        const moveDir = this.retreatDir || { x: 0, z: 0 };
-        callbacks.onMove(moveDir);
-      } else {
-        this.state = 'IDLE';
+    }
+    // ataques que eligen un punto
+    if (this.level >= 1) {
+      for (const e of ens) {
+        if (has('palomas')) consider({ kind: 'target', w: 'palomas', x: e.x - Math.sin(me.yaw) * 0.0, z: e.z, score: this.scoreAt(e.x, e.y + 0.5, e.z, BOOM.regalo, mult) * 1.6 - 20 });
+        if (has('guacamaya')) consider({ kind: 'target', w: 'guacamaya', x: e.x, z: e.z, score: this.scoreAt(e.x, e.y + 0.4, e.z, BOOM.guacamaya, mult) * 0.9 - 12 });
       }
     }
+    this.best = best;
   }
 
-  _decideStrategy(callbacks) {
-    if (!this.enemies || this.enemies.length === 0) {
-      this.state = 'IDLE';
+  // cada cuadro: decide qué botones "aprieta" la CPU
+  update(dt) {
+    const m = this.m, T = m.turn, me = this.me();
+    if (!T || !me || !me.alive) return;
+    this.t += dt;
+    const inp = { mx: 0, my: 0, fire: false, jumpHeld: false };
+    if (m.phase === 'retreat') {
+      // alejarse un poco del peligro
+      if (this.state !== 'retreat') { this.state = 'retreat'; this.t = 0; this.retreatYaw = me.yaw + Math.PI + (this.r() - 0.5); }
+      const d = wrap(this.retreatYaw - me.yaw);
+      if (Math.abs(d) > 0.2) inp.mx = d > 0 ? -1 : 1;
+      else if (this.t < 2.4 && this.safeAhead(me)) inp.my = 1;
+      m.control(inp);
       return;
     }
+    if (m.phase !== 'play') return;
 
-    // Pick target: closest or weakest
-    let bestTarget = this.enemies[0];
-    let minDist = 9999;
-    for (const enemy of this.enemies) {
-      const dx = enemy.x - this.activeChicken.x;
-      const dz = enemy.z - this.activeChicken.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < minDist) {
-        minDist = dist;
-        bestTarget = enemy;
+    if (this.state === 'think') {
+      // mientras piensa, gira hacia el enemigo más cercano
+      const e = this.enemies()[0];
+      if (e) { const d = wrap(Math.atan2(e.x - me.x, e.z - me.z) - me.yaw); if (Math.abs(d) > 0.3) inp.mx = d > 0 ? -0.6 : 0.6; }
+      const step = this.gen && this.gen.next();
+      if ((!step || step.done) && this.t > 1.2) {
+        const b = this.best || { kind: 'skip', score: 0 };
+        if (b.score < 8 && this.walked < 2 && this.enemies().length) {
+          this.state = 'walk'; this.t = 0; this.walked++;
+          const e2 = this.enemies().sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z))[0];
+          this.walkYaw = Math.atan2(e2.x - me.x, e2.z - me.z) + (this.r() - 0.5) * 0.8;
+        } else this.startPlan(b);
       }
+      m.control(inp);
+      return;
     }
-    this.target = bestTarget;
-
-    // Pick weapon
-    let weapon = 'bazuca';
-    if (minDist < 2.5) {
-      weapon = 'picotazo';
-    } else if (minDist > 18 && this.difficulty !== 'facil' && Math.random() < 0.35) {
-      weapon = 'palomas';
-    } else if (Math.random() < 0.3) {
-      weapon = 'granada';
+    if (this.state === 'walk') {
+      const d = wrap(this.walkYaw - me.yaw);
+      if (Math.abs(d) > 0.15) inp.mx = d > 0 ? -1 : 1;
+      else if (this.safeAhead(me)) inp.my = 1;
+      else if (me.ground && this.t > 0.5 && this.r() < 0.05) m.act({ t: 'jump' });
+      if (this.t > 2.6 || T.clock < 12) { this.state = 'think'; this.t = 0; this.gen = this.search(); }
+      m.control(inp);
+      return;
     }
-    this.selectedWeapon = weapon;
-
-    if (callbacks.onWeaponSelect) {
-      callbacks.onWeaponSelect(weapon);
+    const p = this.plan;
+    if (!p) { m.control(inp); return; }
+    if (this.state === 'select') {
+      if (p.kind === 'skip') { m.act({ t: 'weapon', w: 'saltar' }); this.state = 'fire'; this.t = 0; m.control(inp); return; }
+      m.act({ t: 'weapon', w: p.w });
+      if (p.fuse) m.act({ t: 'fuse', v: p.fuse });
+      if (p.kind === 'power' || p.kind === 'direct') m.act({ t: 'aim' });
+      if (p.kind === 'target') T.cursor = { x: p.x, z: p.z };
+      this.state = 'aim'; this.t = 0;
+      m.control(inp);
+      return;
     }
-
-    // Calculate angle and power with simulated ballistics
-    const dx = this.target.x - this.activeChicken.x;
-    const dy = this.target.y - this.activeChicken.y;
-    const dz = this.target.z - this.activeChicken.z;
-    const horizDist = Math.max(0.1, Math.sqrt(dx * dx + dz * dz));
-
-    let yaw = Math.atan2(dx, dz);
-    let pitch = 0.35 + Math.min(0.4, (dy / horizDist) * 0.5);
-    let power = Math.min(1.0, Math.max(0.2, horizDist / 26));
-
-    // Apply difficulty error
-    if (this.difficulty === 'facil') {
-      yaw += (Math.random() - 0.5) * 0.35;
-      pitch += (Math.random() - 0.5) * 0.25;
-      power = Math.min(1.0, Math.max(0.2, power + (Math.random() - 0.5) * 0.3));
-    } else if (this.difficulty === 'normal') {
-      yaw += (Math.random() - 0.5) * 0.12;
-      pitch += (Math.random() - 0.5) * 0.08;
-      power = Math.min(1.0, Math.max(0.2, power + (Math.random() - 0.5) * 0.1));
-    } else {
-      // Dificil: compensate for wind
-      if (this.wind) {
-        yaw -= this.wind.x * 0.04;
+    if (this.state === 'aim') {
+      if (p.kind === 'target') { if (this.t > 1.0) { this.state = 'fire'; this.t = 0; } m.control(inp); return; }
+      const dy = wrap(p.yaw - me.yaw);
+      const dp = (p.pitch || 0) - T.pitch;
+      if (Math.abs(dy) > 0.03) inp.mx = Math.max(-1, Math.min(1, -dy * 4));
+      else me.yaw = p.yaw;
+      if (p.kind !== 'melee') { if (Math.abs(dp) > 0.02) inp.my = Math.max(-1, Math.min(1, dp * 4)); else T.pitch = p.pitch; }
+      if ((Math.abs(dy) <= 0.03 && (p.kind === 'melee' || Math.abs(dp) <= 0.02) && this.t > 0.6) || this.t > 4) {
+        me.yaw = p.yaw; if (p.pitch !== undefined) T.pitch = p.pitch;
+        this.state = 'fire'; this.t = 0;
       }
+      if (T.mode !== 'aim' && p.kind !== 'melee') { /* el modo apuntar ya se activó al elegir */ }
+      m.control(inp);
+      return;
     }
-
-    this.targetYaw = yaw;
-    this.targetPitch = pitch;
-    this.targetPower = power;
-    this.currentYaw = this.activeChicken.rotation || 0;
-    this.currentPitch = 0;
-
-    this.state = 'AIMING';
-    this.timer = 1.2;
+    if (this.state === 'fire') {
+      if (p.kind === 'power') {
+        inp.fire = T.power < p.power - 0.005 && this.t < 3;
+        if (!inp.fire && this.t > 0.05) this.state = 'done';
+      } else {
+        inp.fire = this.t < 0.1;
+        if (p.kind === 'direct' && this.t > 0.8 && T.shots < 2 && m.phase === 'play') { this.t = 0; inp.fire = true; }
+        if (this.t > 0.2 && p.kind !== 'direct') this.state = 'done';
+      }
+      m.control(inp);
+      return;
+    }
+    m.control(inp);
   }
 
-  startRetreat(retreatTime = 5) {
-    this.state = 'RETREATING';
-    this.timer = retreatTime - 0.5;
+  startPlan(b) {
+    const n = NOISE[this.level] || NOISE[1];
+    const g = () => (this.r() + this.r() - 1);
+    const p = { ...b };
+    if (p.yaw !== undefined) p.yaw += g() * n.yaw;
+    if (p.pitch !== undefined) p.pitch += g() * n.pitch;
+    if (p.power !== undefined) p.power = Math.max(0.2, Math.min(1, p.power + g() * n.power));
+    if (p.kind === 'target') { p.x += g() * n.power * 10; p.z += g() * n.power * 10; }
+    if (p.kind !== 'skip' && weaponById(p.w).id !== p.w) p.kind = 'skip';
+    this.plan = p;
+    this.state = 'select';
+    this.t = 0;
+  }
 
-    // Pick a retreat direction away from target
-    if (this.target) {
-      const dx = this.activeChicken.x - this.target.x;
-      const dz = this.activeChicken.z - this.target.z;
-      const len = Math.sqrt(dx * dx + dz * dz) || 1;
-      this.retreatDir = { x: dx / len, z: dz / len };
-    } else {
-      this.retreatDir = { x: Math.random() - 0.5, z: Math.random() - 0.5 };
-    }
+  safeAhead(me) {
+    const x = me.x + Math.sin(me.yaw) * 1.2, z = me.z + Math.cos(me.yaw) * 1.2;
+    const y = this.m.terrain.surfaceY(x, z);
+    return y > this.m.water + 0.6 && me.y - y < 3;
   }
 }

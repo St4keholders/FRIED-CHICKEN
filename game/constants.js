@@ -1,283 +1,156 @@
-// game/constants.js - Game configurations, weapons, items, colors and defaults
+// Fried Chicken: constantes del juego
 
-export const GAME_NAME = 'Plumazo';
-export const PEER_PREFIX = 'plumazo-v1-';
-export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const CODE_LENGTH = 5;
+export const GAME_NAME = 'Fried Chicken';
+// SHA-256 de la contraseña de la pantalla principal (la misma de Star League)
+export const PASSWORD_HASH = 'b84278f09dc30d6b6710c7628dbe93a440013d3dd152c147c19fe00ba4fecf4f';
+export const PEER_PREFIX = 'friedchicken-v1-';
+export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-// Default password hash: "starleague" or "plumazo"
-// SHA-256 for "starleague" = 7dd8969f923d21386d1b06ab873e8184fafc6666ef86d6bf5d33690986ffca37
-export const PASSWORD_HASH = '7dd8969f923d21386d1b06ab873e8184fafc6666ef86d6bf5d33690986ffca37';
-export const BACKUP_PASSWORD_HASH = 'a2ef897058cad778ecc7b0379e62870a20ad731d851c139e6406d250b5e2ff00'; // "plumazo"
+// ---- mundo ----
+export const VOX = 0.5; // tamaño de un vóxel en unidades del mundo
+export const NX = 144;
+export const NY = 48;
+export const NZ = 144;
+export const CHUNK = 16;
+export const WORLD_X = NX * VOX; // 72
+export const WORLD_Y = NY * VOX; // 24
+export const WORLD_Z = NZ * VOX; // 72
 
+// materiales de los vóxeles (el color depende de la isla)
+export const M = { TOP: 1, SUB: 2, DEEP: 3, METAL: 4, A: 5, B: 6, C: 7, D: 8, WHITE: 9, DARK: 10, E: 11, BEAM: 12 };
+
+export const MAX_PLAYERS = 4;
+export const MAX_TEAMS = 4;
+
+// colores de equipo (los 4 primeros son de los jugadores J1–J4)
 export const TEAM_COLORS = [
-  { id: 'rojo', name: 'Rojo Picante', primary: '#e63946', secondary: '#f1faee', accent: '#ff758f' },
-  { id: 'azul', name: 'Azul Cielo', primary: '#1d3557', secondary: '#a8dadc', accent: '#457b9d' },
-  { id: 'verde', name: 'Verde Campo', primary: '#2a9d8f', secondary: '#e76f51', accent: '#52b788' },
-  { id: 'amarillo', name: 'Amarillo Maíz', primary: '#f4a261', secondary: '#e9c46a', accent: '#e76f51' },
+  { id: 0, name: 'Rojo', hex: '#ff4757', dark: '#b3202e' },
+  { id: 1, name: 'Azul', hex: '#2f8cff', dark: '#1458b8' },
+  { id: 2, name: 'Verde', hex: '#2ecc71', dark: '#16884a' },
+  { id: 3, name: 'Morado', hex: '#a55eea', dark: '#6a2fb0' },
+  { id: 4, name: 'Lata', hex: '#9aa7b4', dark: '#5d6873' },
+  { id: 5, name: 'Naranja', hex: '#ff9f1a', dark: '#c46a00' },
+  { id: 6, name: 'Rosado', hex: '#ff6fae', dark: '#c4357a' },
 ];
+export const SLOT_NAMES = ['J1', 'J2', 'J3', 'J4'];
+
+export const TEAM_NAMES = [
+  'Los Crocantes', 'Alitas Bravas', 'Pechugas de Acero', 'Los Nuggets', 'Muslos de Hierro', 'Pío Pío Squad',
+  'Los Emplumados', 'Cresta Brava', 'Huevos Revueltos', 'Los Desplumados', 'La Banda del Maíz', 'Picos de Oro',
+];
+export const CPU_TEAM_NAMES = ['Pollitos de Lata', 'Robo-Pollos', 'Latas Locas'];
+
+export const CHICKEN_NAMES = [
+  'Pío', 'Huevito', 'Plumón', 'Kiki', 'Tostado', 'Nugget', 'Crispy', 'Pechuga', 'Chispita', 'Maicito',
+  'Copete', 'Alita', 'Tito', 'Pepa', 'Canelo', 'Yema', 'Pollín', 'Migaja', 'Rulo', 'Coco',
+];
+export const ROBOT_NAMES = ['Tuerca', 'Tornillo', 'Latón', 'Chatarra', 'Bujía', 'Resorte', 'Clavo', 'Pistón', 'Voltio', 'Remache', 'Engranaje', 'Chip'];
 
 export const ACCESSORIES = [
-  { id: 'casco', name: 'Casco Militar', desc: 'Casco de juguete resistente', icon: '🪖' },
-  { id: 'sombrero_vueltiao', name: 'Sombrero Vueltiao', desc: 'Sabor colombiano garantizado', icon: '🤠' },
-  { id: 'gorra', name: 'Gorra Deportiva', desc: 'Estilo urbano de patio', icon: '🧢' },
-  { id: 'corona', name: 'Corona Dorada', desc: 'Rey del gallinero', icon: '👑' },
-  { id: 'bandana', name: 'Bandana Ninja', desc: 'Sigiloso y mortal', icon: '🥷' },
-  { id: 'monoculo', name: 'Monóculo del Zorro', desc: 'Desbloqueado tras vencer a Rufo', icon: '🧐', secret: true },
-  { id: 'disfraz_zorro', name: 'Disfraz de Rufo', desc: 'Piel de zorro de peluche', icon: '🦊', secret: true },
+  { id: 'casco', name: 'Casco' },
+  { id: 'vueltiao', name: 'Sombrero vueltiao' },
+  { id: 'gorra', name: 'Gorra' },
+  { id: 'corona', name: 'Corona' },
+  { id: 'bandana', name: 'Bandana' },
+  { id: 'gafas', name: 'Gafas de sol' },
+  { id: 'copete', name: 'Copete punk' },
+  { id: 'chef', name: 'Gorro de chef' },
 ];
 
-export const DEFAULT_CHICKEN_NAMES = [
-  'Pío', 'Huevito', 'Plumón', 'Kiki', 'Tostado', 'Crestas',
-  'Pechuga', 'Ala Brava', 'Nugget', 'Piquito', 'Coronel', 'Polvorón',
-  'Chicharrón', 'Maicito', 'Plumita', 'Batidor', 'Pío Loco', 'Pancita'
-];
-
+// ---- armas ----
+// aim: power (cargar y lanzar), direct (sin potencia), melee (golpe), drop (se deja en el piso),
+//      target (se elige un punto en el mapa), targetpower (punto + lanzar), none (se activa)
 export const WEAPONS = [
-  {
-    id: 'bazuca',
-    name: 'Bazuca de Huevo',
-    icon: '🥚',
-    type: 'projectile',
-    ammo: Infinity,
-    damage: 48,
-    radius: 3.4,
-    impulse: 14,
-    powerCharge: true,
-    affectedByWind: true,
-    bounce: false,
-    timer: false,
-    desc: 'Huevo que vuela con el viento y explota al contacto.'
-  },
-  {
-    id: 'granada',
-    name: 'Huevo Granada',
-    icon: '💣',
-    type: 'projectile',
-    ammo: Infinity,
-    damage: 54,
-    radius: 3.8,
-    impulse: 15,
-    powerCharge: true,
-    affectedByWind: false,
-    bounce: true,
-    timer: true,
-    minTimer: 1,
-    maxTimer: 5,
-    defaultTimer: 3,
-    desc: 'Rebota en el terreno. Mecha configurable de 1 a 5 s.'
-  },
-  {
-    id: 'maiz_pira',
-    name: 'Maíz Pira',
-    icon: '🍿',
-    type: 'cluster',
-    ammo: 3,
-    damage: 30,
-    radius: 3.0,
-    clusterCount: 5,
-    clusterDamage: 25,
-    clusterRadius: 2.5,
-    powerCharge: true,
-    affectedByWind: false,
-    bounce: true,
-    timer: true,
-    defaultTimer: 3,
-    desc: 'Granada de racimo. Se abre en 5 crispetas explosivas.'
-  },
-  {
-    id: 'escopeta',
-    name: 'Escopeta de Semillas',
-    icon: '🌽',
-    type: 'shotgun',
-    ammo: Infinity,
-    shotsPerTurn: 2,
-    damage: 26,
-    radius: 1.8,
-    impulse: 11,
-    powerCharge: false,
-    affectedByWind: false,
-    desc: 'Dos tiros rectos por turno. Sin viento, alta precisión.'
-  },
-  {
-    id: 'picotazo',
-    name: 'Picotazo de Fuego',
-    icon: '🔥',
-    type: 'melee',
-    ammo: Infinity,
-    damage: 40,
-    impulse: 22,
-    powerCharge: false,
-    desc: 'Gancho hacia arriba con fuego. Lanza al rival por los aires.'
-  },
-  {
-    id: 'chancla',
-    name: 'La Chancla',
-    icon: '🩴',
-    type: 'melee_bat',
-    ammo: 2,
-    damage: 38,
-    impulse: 28,
-    powerCharge: true,
-    desc: 'El arma definitiva de mamá colombiana. Manda volando al rival.'
-  },
-  {
-    id: 'palomas',
-    name: 'Bandada de Palomas',
-    icon: '🕊️',
-    type: 'airstrike',
-    ammo: 1,
-    damage: 32,
-    radius: 2.8,
-    count: 5,
-    powerCharge: false,
-    needsTarget: true,
-    desc: 'Marca un punto en el mapa. Pasan palomas soltando regalitos.'
-  },
-  {
-    id: 'vela',
-    name: 'Vela de Cumpleaños',
-    icon: '🕯️',
-    type: 'planted',
-    ammo: 2,
-    damage: 75,
-    radius: 5.0,
-    impulse: 20,
-    timer: 5,
-    powerCharge: false,
-    desc: 'Dinamita festiva. Se deja a los pies y explota en 5 s.'
-  },
-  {
-    id: 'mina',
-    name: 'Mina Nido',
-    icon: '🪺',
-    type: 'mine',
-    ammo: 2,
-    damage: 60,
-    radius: 4.2,
-    impulse: 18,
-    proximityDistance: 3.2,
-    fuseTime: 3,
-    powerCharge: false,
-    desc: 'Mina de proximidad. Se activa si alguien se acerca.'
-  },
-  {
-    id: 'mama_gallina',
-    name: 'Mamá Gallina',
-    icon: '🐔',
-    type: 'walking_bomb',
-    ammo: 1,
-    damage: 70,
-    radius: 4.6,
-    impulse: 20,
-    fuseTime: 10,
-    powerCharge: false,
-    desc: 'Corre hacia adelante saltando obstáculos. Detónala o espera 10 s.'
-  },
-  {
-    id: 'huevo_oro',
-    name: 'Huevo de Oro',
-    icon: '✨',
-    type: 'holy_grenade',
-    ammo: 1,
-    damage: 90,
-    radius: 6.2,
-    impulse: 25,
-    fuseTime: 4,
-    powerCharge: true,
-    bounce: true,
-    desc: 'Granada sagrada ancestral. Coro celestial antes de la devastación.'
-  },
-  {
-    id: 'guacamaya',
-    name: 'Guacamaya Teledirigida',
-    icon: '🦜',
-    type: 'homing',
-    ammo: 1,
-    damage: 55,
-    radius: 4.0,
-    impulse: 18,
-    needsTarget: true,
-    desc: 'Misil alado que persigue el punto objetivo.'
-  },
+  { id: 'bazuca', name: 'Bazuca de Huevo', icon: '🥚', ammo: -1, aim: 'power', desc: 'Huevo explosivo que se lleva el viento' },
+  { id: 'granada', name: 'Huevo Granada', icon: '💣', ammo: -1, aim: 'power', fuse: true, desc: 'Rebota y explota con la mecha' },
+  { id: 'maiz', name: 'Maíz Pira', icon: '🌽', ammo: 3, aim: 'power', fuse: true, desc: 'Revienta en 5 crispetas explosivas' },
+  { id: 'escopeta', name: 'Escopeta de Semillas', icon: '🌻', ammo: -1, aim: 'direct', desc: 'Dos tiros rectos por turno' },
+  { id: 'picotazo', name: 'Picotazo de Fuego', icon: '🔥', ammo: -1, aim: 'melee', desc: 'Salta y manda a volar hacia arriba' },
+  { id: 'chancla', name: 'La Chancla', icon: '👡', ammo: 2, aim: 'melee', desc: '¡Venga para acá, mijo!' },
+  { id: 'palomas', name: 'Bandada de Palomas', icon: '🕊️', ammo: 1, aim: 'target', desc: 'Regalitos explosivos desde el cielo' },
+  { id: 'vela', name: 'Vela de Cumpleaños', icon: '🕯️', ammo: 2, aim: 'drop', desc: 'Explota a los 5 segundos: ¡corre!' },
+  { id: 'mina', name: 'Mina Nido', icon: '🐣', ammo: 2, aim: 'drop', desc: 'Explota cuando alguien se acerca' },
+  { id: 'gallina', name: 'Mamá Gallina', icon: '🐔', ammo: 1, aim: 'drop', desc: 'Corre sola; dispara otra vez para detonarla' },
+  { id: 'oro', name: 'Huevo de Oro', icon: '🌟', ammo: 1, aim: 'power', desc: '¡Aleluyaaa! Explosión enorme' },
+  { id: 'guacamaya', name: 'Guacamaya Teledirigida', icon: '🦜', ammo: 1, aim: 'targetpower', desc: 'Marca el objetivo y lánzala' },
+  { id: 'cuerda', name: 'Cuerda de Lombriz', icon: '➰', ammo: 3, aim: 'direct', util: true, desc: 'Engánchate y balancéate' },
+  { id: 'ventilador', name: 'Ventilador a la Espalda', icon: '🌀', ammo: 2, aim: 'none', util: true, desc: 'Vuela con combustible limitado' },
+  { id: 'sombrilla', name: 'Sombrilla', icon: '☂️', ammo: 3, aim: 'none', util: true, desc: 'Cae despacio' },
+  { id: 'teleport', name: 'Teletransporte', icon: '✨', ammo: 2, aim: 'target', util: true, desc: 'Aparece donde marques' },
+  { id: 'viga', name: 'Viga de Juguete', icon: '🧱', ammo: 3, aim: 'place', util: true, desc: 'Pon un puente adelante' },
+  { id: 'saltar', name: 'Saltar turno', icon: '⏭️', ammo: -1, aim: 'none', util: true, desc: 'Pasa el turno' },
+  { id: 'rendirse', name: 'Rendirse', icon: '🏳️', ammo: -1, aim: 'none', util: true, desc: 'Tu equipo se rinde' },
+];
+export const WEAPON_BY_ID = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));
+export function weaponById(id) { return WEAPON_BY_ID[id] || WEAPONS[0]; }
+
+export const WEAPON_SETS = [
+  { id: 'clasico', name: 'Clásico' },
+  { id: 'locura', name: 'Locura' },
 ];
 
-export const UTILITIES = [
-  {
-    id: 'cuerda',
-    name: 'Cuerda de Lombriz',
-    icon: '🪱',
-    type: 'utility_rope',
-    endsTurn: false,
-    desc: 'Se engancha al terreno superior para balancearse.'
-  },
-  {
-    id: 'jetpack',
-    name: 'Ventilador de Espalda',
-    icon: '🪭',
-    type: 'utility_jetpack',
-    endsTurn: false,
-    fuel: 100,
-    desc: 'Vuela con combustible limitado durante el turno.'
-  },
-  {
-    id: 'sombrilla',
-    name: 'Sombrilla',
-    icon: '☂️',
-    type: 'utility_parachute',
-    endsTurn: false,
-    desc: 'Paracaídas para no sufrir daño por caída.'
-  },
-  {
-    id: 'teleport',
-    name: 'Teletransporte',
-    icon: '🌀',
-    type: 'utility_teleport',
-    needsTarget: true,
-    endsTurn: true,
-    desc: 'Transpórtate a cualquier punto visible del mapa.'
-  },
-  {
-    id: 'viga',
-    name: 'Viga de Juguete',
-    icon: '🧱',
-    type: 'utility_girder',
-    needsTarget: true,
-    endsTurn: false,
-    desc: 'Coloca un bloque o puente de juguete en el mapa.'
-  },
-  {
-    id: 'skip',
-    name: 'Saltar Turno',
-    icon: '⏭️',
-    type: 'skip_turn',
-    endsTurn: true,
-    desc: 'Pasa tu turno al siguiente jugador.'
-  },
-  {
-    id: 'surrender',
-    name: 'Rendirse',
-    icon: '🏳️',
-    type: 'surrender',
-    needsConfirm: true,
-    endsTurn: true,
-    desc: 'Rinde a todo tu equipo (pide confirmación).'
+export function startAmmo(set) {
+  const inv = {};
+  for (const w of WEAPONS) {
+    if (w.ammo < 0) inv[w.id] = -1;
+    else inv[w.id] = set === 'locura' ? Math.max(4, w.ammo * 3) : w.ammo;
   }
+  return inv;
+}
+
+// ---- islas ----
+export const ISLANDS = [
+  { id: 'arenero', name: 'Arenero del Patio' },
+  { id: 'banera', name: 'Bañera Espumosa' },
+  { id: 'cocina', name: 'Cocina Gigante' },
+  { id: 'juguetes', name: 'Cuarto de Juguetes' },
+  { id: 'billar', name: 'Mesa de Billar' },
+  { id: 'castillo', name: 'Castillo del Zorro' },
+];
+export const RANDOM_ISLAND = 'aleatoria';
+
+// ---- configuración del lobby ----
+export const MODES = [
+  { id: 'versus', name: 'Versus', desc: 'Todos contra todos por turnos' },
+  { id: 'coop', name: 'Cooperativo', desc: 'Juntos contra la CPU' },
+];
+export const TEAM_MODES = [
+  { id: 'solo', name: 'Cada uno su equipo' },
+  { id: 'shared', name: 'Equipos compartidos' },
+];
+export const CPU_LEVELS = [
+  { id: 0, name: 'Fácil' },
+  { id: 1, name: 'Normal' },
+  { id: 2, name: 'Difícil' },
+];
+export const TURN_TIMES = [30, 45, 60];
+export const HP_OPTIONS = [100, 150, 200];
+export const CHICKEN_COUNTS = [2, 3, 4];
+export const SUDDEN_OPTIONS = [5, 10, 15];
+export const QUALITY = [
+  { id: 'alta', name: 'Alta' },
+  { id: 'normal', name: 'Normal' },
+  { id: 'ahorro', name: 'Ahorro' },
 ];
 
-export const DEFAULT_CONFIG = {
-  mode: 'versus', // versus, coop, historia
-  turnTime: 45, // 30, 45, 60
-  retreatTime: 5,
-  chickensPerTeam: 4, // 2, 3, 4
-  initialHealth: 100, // 100, 150, 200
-  weaponSet: 'clasico', // clasico, locura
-  islandId: 'arenero', // arenero, banera, cocina, cuarto, billar, castillo, random
-  suddenDeathMinutes: 10,
-  graphicsQuality: 'normal', // alta, normal, ahorro
-  cpuCount: 1, // 1, 2, 3 in coop/versus
-  cpuDifficulty: 'normal', // facil, normal, dificil
-  friendlyFire: false, // In coop
-  sharedTeams: false,
-  startLevel: 1, // story start level (1-8)
+export const DEFAULT_CFG = {
+  mode: 'versus',
+  teamMode: 'solo',
+  chickens: 4,
+  hp: 100,
+  turnTime: 45,
+  weaponSet: 'clasico',
+  island: RANDOM_ISLAND,
+  sudden: 10,
+  cpuTeams: 1,
+  cpuLevel: 1,
+  friendly: false,
+  quality: 'normal',
 };
+
+// ---- tiempos y física ----
+export const RETREAT_TIME = 5;
+export const GRAVITY = 20;
+export const PROJ_GRAVITY = 18;
+export const CHICKEN_R = 0.38;
+export const CHICKEN_H = 1.25;

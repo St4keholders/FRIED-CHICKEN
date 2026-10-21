@@ -1,157 +1,82 @@
-// game/mirror.js - Client-side 3D game mirror replicating host simulation via seeded terrain, carve events, and snapshot interpolation
+// Copia del juego en el celular: genera la misma isla con la semilla, aplica los cambios del
+// terreno y dibuja las fotos (snapshots) que manda el anfitrión, interpolando entre ellas.
+import { Terrain } from './terrain.js';
+import { Renderer } from './render.js';
 
-import { VoxelTerrain } from './terrain.js';
-import { getIsland } from './islands.js';
-import { GameRenderer } from './render.js';
+const DELAY = 0.1;
 
-export class GameMirror {
-  constructor(canvasElement, options = {}) {
-    this.canvas = canvasElement;
-    this.options = options;
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpAng(a, b, t) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+export class MirrorView {
+  constructor(container, quality) {
+    this.renderer = new Renderer(container, { quality: quality || 'normal', phone: true });
+    this.snaps = [];
     this.terrain = null;
-    this.renderer = null;
-    this.snapshots = []; // buffer for interpolation
-    this.carveSequence = 0;
-    this.mySlot = options.slot || null;
-    this.activeChicken = null;
-    this.currentEntities = { chickens: [], crates: [], barrels: [], minas: [] };
-    this.currentProjectiles = [];
-    this.running = false;
-    this.lastFrameTime = performance.now();
+    this.clock = 0;
+    this.init = null;
   }
 
-  initMatch(matchInit) {
-    const { seed, islandId, carves = [] } = matchInit;
-    const island = getIsland(islandId);
+  // { seed, island, teams, chickens, edits }
+  setInit(m) {
+    this.init = m;
+    this.terrain = new Terrain(m.seed, m.island);
+    for (const e of m.edits || []) this.terrain.applyEdit(e);
+    this.terrain.dirty.clear();
+    this.renderer.setWorld(this.terrain, m.teams, m.chickens);
+    this.snaps = [];
+  }
 
-    // 1. Generate identical terrain from seed
-    this.terrain = new VoxelTerrain(seed, island);
+  edits(from, list) {
+    if (!this.terrain) return true;
+    if (from !== this.terrain.edits.length) return from > this.terrain.edits.length; // true = pedir todo de nuevo
+    for (const e of list) this.terrain.applyEdit(e);
+    return false;
+  }
 
-    // 2. Initialize Three.js renderer
-    this.renderer = new GameRenderer(this.canvas, {
-      quality: this.options.quality || 'normal',
-      isMobile: true,
+  snap(s) {
+    s._t = this.clock;
+    this.snaps.push(s);
+    if (this.snaps.length > 6) this.snaps.shift();
+  }
+
+  fx(e) { this.renderer.fx(e); }
+
+  view() {
+    const n = this.snaps.length;
+    if (!n) return null;
+    const rt = this.clock - DELAY;
+    let a = this.snaps[0], b = this.snaps[n - 1];
+    for (let i = 0; i < n - 1; i++) if (this.snaps[i]._t <= rt && this.snaps[i + 1]._t >= rt) { a = this.snaps[i]; b = this.snaps[i + 1]; break; }
+    const span = b._t - a._t;
+    const t = span > 0 ? Math.max(0, Math.min(1, (rt - a._t) / span)) : 1;
+    const chickens = b.ch.map((c, i) => {
+      const p = a.ch[i] || c;
+      const f = c[5];
+      return {
+        id: i, x: lerp(p[0], c[0], t), y: lerp(p[1], c[1], t), z: lerp(p[2], c[2], t), yaw: lerpAng(p[3], c[3], t), hp: c[4],
+        alive: !!(f & 1), air: !!(f & 2), walking: !!(f & 4), rope: f & 8 ? c[6] : null, jet: !!(f & 16), umbrella: !!(f & 32), dying: !!(f & 64), hurt: !!(f & 128),
+      };
     });
-    this.renderer.setIslandTheme(island);
-
-    // 3. Catch up with any historical carve events
-    for (const c of carves) {
-      this.applyCarve(c, false);
-    }
-    this.renderer.updateTerrainMeshes(this.terrain);
-
-    this.running = true;
-    this.loop();
+    const prev = new Map(a.o.map((o) => [o[0], o]));
+    const objs = b.o.map((o) => {
+      const p = prev.get(o[0]) || o;
+      return { id: o[0], kind: o[1], x: lerp(p[2], o[2], t), y: lerp(p[3], o[3], t), z: lerp(p[4], o[4], t), yaw: lerpAng(p[5], o[5], t), para: !!o[6], trig: !!o[7], name: o[8] || '' };
+    });
+    return { chickens, objs, cam: b.cam, water: lerp(a.water, b.water, t), phase: b.ph, turn: b.tv };
   }
 
-  applyCarve(carveEvent, spawnParticles = true) {
-    if (!this.terrain) return;
-    if (carveEvent.seq <= this.carveSequence && this.carveSequence !== 0) return;
-
-    this.carveSequence = carveEvent.seq;
-    this.terrain.carve(carveEvent.x, carveEvent.y, carveEvent.z, carveEvent.r);
-    if (this.renderer) {
-      this.renderer.updateTerrainMeshes(this.terrain);
-      if (spawnParticles) {
-        this.renderer.spawnExplosionParticles(carveEvent.x, carveEvent.y, carveEvent.z);
-      }
-    }
+  frame(dt) {
+    this.clock += dt;
+    const v = this.view();
+    if (v && this.terrain) this.renderer.draw(v, dt);
+    else this.renderer.draw({ chickens: [], objs: [], cam: { m: 'orbit' } }, dt);
   }
 
-  receiveSnapshot(snap) {
-    // Add client receipt timestamp
-    snap.clientTime = performance.now();
-    this.snapshots.push(snap);
-
-    // Keep buffer small (~5 snapshots)
-    if (this.snapshots.length > 8) {
-      this.snapshots.shift();
-    }
-  }
-
-  loop() {
-    if (!this.running) return;
-
-    const now = performance.now();
-    const dt = Math.min(0.05, (now - this.lastFrameTime) / 1000);
-    this.lastFrameTime = now;
-
-    this.interpolate(now);
-
-    if (this.renderer) {
-      this.renderer.render(dt);
-    }
-
-    requestAnimationFrame(() => this.loop());
-  }
-
-  // Smooth snapshot interpolation with 90ms target delay
-  interpolate(now) {
-    if (this.snapshots.length === 0 || !this.renderer) return;
-
-    const targetTime = now - 90;
-
-    // Find two bounding snapshots
-    let s0 = this.snapshots[0];
-    let s1 = this.snapshots[0];
-
-    for (let i = 0; i < this.snapshots.length - 1; i++) {
-      if (this.snapshots[i].clientTime <= targetTime && this.snapshots[i + 1].clientTime >= targetTime) {
-        s0 = this.snapshots[i];
-        s1 = this.snapshots[i + 1];
-        break;
-      }
-    }
-
-    const span = s1.clientTime - s0.clientTime;
-    const alpha = span > 0 ? Math.min(1.0, Math.max(0.0, (targetTime - s0.clientTime) / span)) : 1.0;
-
-    // Interpolate chickens
-    const interpolatedChickens = [];
-    if (s0.chickens && s1.chickens) {
-      for (const c0 of s0.chickens) {
-        const c1 = s1.chickens.find((c) => c.id === c0.id) || c0;
-        interpolatedChickens.push({
-          ...c1,
-          x: c0.x + (c1.x - c0.x) * alpha,
-          y: c0.y + (c1.y - c0.y) * alpha,
-          z: c0.z + (c1.z - c0.z) * alpha,
-          rotation: c0.rotation + (c1.rotation - c0.rotation) * alpha,
-          isWalking: c1.isWalking,
-        });
-      }
-    }
-
-    this.currentEntities.chickens = interpolatedChickens;
-    this.currentProjectiles = s1.projectiles || [];
-
-    // Sync to renderer
-    this.renderer.syncEntities(interpolatedChickens, s1.crates, s1.barrels, s1.minas);
-    this.renderer.syncProjectiles(this.currentProjectiles);
-
-    // Sync camera mode & aim
-    const active = interpolatedChickens.find((c) => c.id === s1.activeChickenId);
-    if (active) {
-      this.renderer.activeChicken = active;
-      this.renderer.aimPitch = s1.aimPitch || 0;
-      this.renderer.aimYaw = s1.aimYaw || active.rotation || 0;
-      this.renderer.setCameraMode(s1.camMode || 'follow', active);
-    }
-  }
-
-  resize(w, h) {
-    if (this.renderer) {
-      this.renderer.resize(w, h);
-    }
-  }
-
-  destroy() {
-    this.running = false;
-    if (this.renderer) {
-      this.renderer.destroy();
-      this.renderer = null;
-    }
-    this.terrain = null;
-    this.snapshots = [];
-  }
+  dispose() { this.renderer.dispose(); }
 }
