@@ -1,365 +1,193 @@
-# Plan: **Plumazo** — guerra de pollitos por turnos (estilo Worms 4: Mayhem)
+# Plan de mejoras de Fried Chicken (para un agente en modo loop)
 
-> Documento para el agente que va a construir el juego. Léelo completo antes de empezar.
-> "Plumazo" es el nombre provisional; se puede cambiar en `game/constants.js`.
-
----
-
-## 0. Reglas de la entrega (obligatorias)
-
-1. **Framework: Next.js** (App Router, versión 16 o la estable más reciente), React 19, JavaScript (no TypeScript), Node ≥ 20.
-2. **Resultado final: un archivo `.zip`** con el proyecto completo listo para subir a GitHub e importar en Vercel **sin configurar nada**.
-   - El .zip **no** incluye `node_modules`, `.next` ni archivos temporales.
-   - Debe incluir `package.json`, `package-lock.json`, `README.md` (en español), `.gitignore`.
-   - `npm install && npm run build` debe terminar sin errores ni advertencias de lint bloqueantes.
-3. **Todo el texto del juego en español (Colombia)**, tono divertido y familiar.
-4. **Sin imágenes ni audio descargados**: todo el arte (modelos voxel, texturas, íconos) y toda la música y efectos se generan con código, igual que en StarLeague. El juego debe consumir muy pocos datos.
-5. **Sin guardado de partidas.** Cada sesión es de una sentada. Solo se guardan en `localStorage` preferencias (configuración del lobby, ajustes del mando) y desbloqueos.
-6. Dependencias permitidas: `next`, `react`, `react-dom`, `peerjs`, `qrcode`, `three`. Nada más sin una razón fuerte (nada de motores de física externos: la física es propia y sencilla).
+> Este documento es para el agente que va a trabajar en el proyecto **en el computador del dueño**, en ciclos (modo loop).
+> Léelo completo antes de empezar. En cada vuelta del loop vuelve a abrirlo, toma la siguiente tarea sin marcar y sigue las reglas de la sección 1.
+> Repositorio: **https://github.com/St4keholders/FRIED-CHICKEN**
 
 ---
 
-## 1. Qué es el juego
+## 0. Preparación (solo la primera vuelta)
 
-Un clon cariñoso de **Worms 4: Mayhem**: equipos de **pollitos de juguete** (pollitos de goma con casco) se enfrentan **por turnos** en **islas 3D destructibles**, con **cámara en tercera persona**. En su turno, el jugador mueve a uno de sus pollitos, elige un arma ridícula, apunta y dispara. El terreno se rompe con las explosiones, el viento desvía los proyectiles y caer al agua es eliminación inmediata. Gana el último equipo con pollitos vivos.
+En el computador local solo existe la rama `main` vieja. Todo el trabajo nuevo está en GitHub (el PR #1 ya se unió a `main`, y este plan llega con el PR `plan-loop`). Primero hay que traerlo:
 
-Lo que debe sentirse **igual a Worms 4**:
-- Turnos con reloj (45 s) y unos segundos de "retirada" después de disparar.
-- Mover, saltar, salto hacia atrás, apuntar en vista sobre el hombro, cargar potencia manteniendo el botón.
-- Viento visible que afecta proyectiles.
-- Terreno destructible en 3D, daño por explosión con empuje, daño por caída.
-- Cajas que caen del cielo (armas, salud, utilidades).
-- Muerte súbita: el agua sube.
-- Personajes que hablan con frases cortas y chillidos cómicos.
-- Un arma tipo "oveja" (aquí la Mamá Gallina) y una tipo "granada sagrada" (aquí el Huevo de Oro con coro celestial).
+```bash
+cd <carpeta del proyecto>
+git remote -v                      # debe apuntar a https://github.com/St4keholders/FRIED-CHICKEN
+git status                         # si hay cambios locales sin guardar: git stash (no borres nada sin avisar)
+git fetch origin
+git checkout main
+git pull origin main               # trae la versión nueva (debe existir game/match.js)
+git merge origin/plan-loop         # solo si plan.md o la carpeta tests/ todavía no están en main
+git checkout -b loop-mejoras       # todo el trabajo del loop va en esta rama
+npm install
+npm i --no-save playwright peer    # solo para las pruebas; no los agregues a package.json
+npx playwright install chromium
+```
 
-Lo que cambia: los personajes son **pollitos de juguete**, las islas son **mundos de juguetes gigantes** (bañera, arenero, cocina, juguetería…), y las armas tienen temática de granja y de Colombia.
+Comprueba que quedó bien:
+- Existen `game/match.js`, `game/terrain.js`, `game/mesher.js`, `tests/sim.mjs`, `tests/e2e.mjs`.
+- `npm run build` termina sin errores.
+- `node tests/sim.mjs` termina con **Todo bien**.
+- Con `npm start` en una terminal y `node tests/peer-server.mjs` en otra, `node tests/e2e.mjs` termina con **Todo bien** (las capturas quedan en `tests/out/`).
 
----
-
-## 2. Mecanismo de conexión (copiado de StarLeague)
-
-Referencia de código: el repositorio público **https://github.com/St4keholders/starleague**. Estudia especialmente `game/engine.js` (anfitrión y red), `game/mirror.js` (copia del juego en el celular), `game/peeropts.js`, `components/HostApp.jsx`, `components/ControllerApp.jsx` y `components/TouchControls.jsx`. Reutiliza la misma arquitectura; adapta lo que haga falta para 3D y turnos.
-
-### 2.1 Roles
-- **Anfitrión (pantalla principal):** la página `/` abierta en el PC conectado al TV. Lleva **toda** la partida (simulación autoritativa a 60 Hz), dibuja el juego y la música, y les manda a los celulares lo que necesitan.
-- **Mandos:** la página `/mando` en cada celular. Mandan los controles al anfitrión y, si quieren, dibujan su propia copia del juego.
-- **Jugar sin TV:** si el anfitrión es un celular (pantalla táctil), aparece **🎮 Jugar en este celular**: ese celular lleva la partida **y además** es el mando de J1, con la vista del juego a pantalla completa y los botones encima. Los demás celulares ven el juego automáticamente; quien no quiera, elige **Solo mando**.
-
-### 2.2 Conexión
-- **PeerJS** con el servidor público gratuito, solo para "presentar" a los dispositivos; después los datos van directo (WebRTC).
-- El anfitrión crea un peer con id `PEER_PREFIX + código`, donde `PEER_PREFIX = 'plumazo-v1-'` y el código son **5 letras/números** sin caracteres confusos (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`). El código se guarda en `sessionStorage` para sobrevivir recargas; si el id está ocupado, se genera otro.
-- El lobby muestra un **QR** (librería `qrcode`) con el link `/mando?c=CÓDIGO`, el link escrito, el código grande y el botón **📤 Compartir link** (`navigator.share`, o copiar al portapapeles).
-- Parámetros opcionales `?peerhost=&peerport=&peerpath=&peersecure=1` para pruebas con un servidor PeerJS local (igual que `peeropts.js`).
-- Reconexión: si un celular se cae, al volver a abrir el link recupera **el mismo puesto** (guardar en `localStorage` del celular un id de jugador aleatorio y enviarlo en el saludo). Mientras está desconectado, si es su turno, el turno se pasa automáticamente al terminar el reloj.
-- Si el anfitrión cierra la página o cambia de app, el juego se pausa para todos.
-
-### 2.3 Contraseña
-La pantalla principal pide contraseña la primera vez (se guarda en `localStorage`). Usar el mismo mecanismo de StarLeague: se compara el **SHA-256** de lo escrito con `PASSWORD_HASH` en `game/constants.js` (implementación propia de SHA-256 como `game/sha256.js`, porque `crypto.subtle` no existe sin HTTPS en algunas redes locales). Usar la misma contraseña de StarLeague. Los celulares **no** la piden.
-
-### 2.4 Mensajes (protocolo)
-Mensajes JSON cortos con campo `t`. Lista mínima:
-
-| Dirección | `t` | Contenido |
-| --- | --- | --- |
-| celular → anfitrión | `hello` | id del jugador, nombre opcional |
-| anfitrión → celular | `welcome` / `full` / `kicked` | puesto asignado (J1–J4) |
-| anfitrión → todos | `lobby` | jugadores, equipos, configuración, quién es J1 |
-| celular → anfitrión | `pick` | color/sombrero del equipo, nombres de los pollitos |
-| J1 → anfitrión | `cfg` / `start` | configuración del lobby y empezar |
-| celular → anfitrión | `in` | controles (~30 veces por segundo, **solo se aplican si es su turno**) |
-| celular → anfitrión | `act` | acciones de un toque: elegir arma, disparar, saltar, detonar, cámara |
-| anfitrión → todos | `phase` | lobby / partida / cinemática / resultados / historia |
-| anfitrión → celulares con vista | `matchInit` | semilla del mapa, tema, equipos, posiciones iniciales |
-| anfitrión → todos | `turn` | de quién es el turno, pollito activo, reloj, viento, inventario del equipo activo |
-| anfitrión → celulares con vista | `snap` | estado de entidades (~20–30 Hz) |
-| anfitrión → todos con vista | `carve` | explosiones que rompen el terreno (con número de secuencia) |
-| anfitrión → todos | `cine` | escena de cinemática (quién habla, texto, cámara) |
-| celular → anfitrión | `cnext` / `cskip` | avanzar o saltar cinemática (saltar solo J1) |
-| anfitrión → celular | `buzz` | vibración (te dieron, tu turno, explosión cerca) |
-| ambos | `pause` / `paused`, `view` | pausa, activar/desactivar vista en el celular |
-
-### 2.5 La copia del juego en el celular (vista)
-Igual que `mirror.js`, pero en 3D:
-- El terreno **no se envía**: se genera igual en todos a partir de la **semilla** (`matchInit`). Las explosiones llegan como eventos `carve` (posición, radio, numerados) y cada celular aplica exactamente la misma resta al terreno. Si un celular se une tarde o pierde eventos, el anfitrión le reenvía la lista completa de `carve` de la partida.
-- Las entidades (pollitos, proyectiles, cajas, minas, barriles, partículas importantes) llegan en `snap` y se **interpolan** con un pequeño retraso (~90 ms), igual que StarLeague.
-- La cámara del celular sigue a la acción igual que la del TV; el dueño del turno ve, mientras apunta, la vista sobre el hombro de **su** pollito.
-- Gasto esperado: < 2 MB por minuto por celular con vista.
+Si algo de esto falla antes de tocar código, anótalo en la Bitácora (sección 6) y arréglalo como primera tarea.
 
 ---
 
-## 3. Vista y motor gráfico (3D)
+## 1. Reglas del loop (cada vuelta)
 
-- **Three.js** con `WebGLRenderer`. Estilo **voxel de juguete**: colores planos, sombreado suave, contorno opcional, cielo con degradado, agua animada alrededor de la isla.
-- **Terreno destructible por vóxeles:**
-  - Mapa aproximado de 160 × 48 × 160 vóxeles (ajustar por rendimiento), dividido en *chunks* de 16³ con mallas generadas por caras visibles (o *greedy meshing*). Una explosión solo regenera los chunks tocados.
-  - Generación por **semilla** (ruido propio, sin librería) según el tema de la isla, más piezas decorativas (patitos de goma, bloques de juguete, cucharas gigantes, castillos de arena), también en vóxeles y también destructibles.
-  - Bloques con material: normal, **indestructible** (metal de juguete), y en algunos mapas **gelatina** que rebota.
-- **Personajes:** pollitos de goma modelados en vóxeles por código (cuerpo, pico, ojos, casco del color del equipo, sombrero/accesorio elegido). Animaciones simples por código: caminar con bamboleo, salto, susto, celebración, quedar tieso de un golpe, explotar en plumas al morir (deja una lápida de huevo con su nombre).
-- **Cámaras:**
-  - **Libre / seguimiento:** detrás y arriba del pollito activo mientras camina.
-  - **Apuntar:** vista sobre el hombro (tercera persona cercana), con mira y trayectoria corta sugerida solo en dificultad fácil.
-  - **Seguir proyectil**, y luego volver.
-  - **Vista general** del mapa (botón de cámara) para planear.
-  - Transiciones suaves entre cámaras.
-- **Rendimiento:** objetivo 60 fps en un celular de gama media. Limitar `devicePixelRatio` a 1,5 en celular, sombras simples (blob debajo de cada pollito en vez de mapas de sombra en celular), partículas con `InstancedMesh`. Opción en el lobby: **Calidad gráfica: Alta / Normal / Ahorro**.
-- **HUD:** reloj del turno, viento (flecha y barras), nombre y vida sobre cada pollito con el color de su equipo, barra de vida total por equipo, arma actual con munición, mensajes grandes ("¡Turno de Equipo Rojo!", "¡Muerte súbita!").
+1. Abre este archivo y toma la **primera tarea sin marcar** `- [ ]` de la sección 4, en orden.
+2. Si la tarea es grande, divídela en subtareas `- [ ]` debajo de ella, en este mismo archivo, y haz una por vuelta.
+3. Implementa. Respeta las reglas del proyecto (sección 3).
+4. Prueba **siempre**, en este orden:
+   - `npm run build` sin errores ni advertencias nuevas.
+   - `node tests/sim.mjs` → **Todo bien**.
+   - `node tests/e2e.mjs` (con `npm start` y `node tests/peer-server.mjs` corriendo) → **Todo bien**.
+   - Agrega a `tests/e2e.mjs` (o a `tests/sim.mjs`) al menos una comprobación nueva de lo que hiciste.
+   - Mira las capturas de `tests/out/` y confirma que nada se ve roto o encimado, en TV (1600×900) y en celular (412×860 vertical y 860×400 horizontal).
+5. Si todo pasa: marca la tarea `- [x]`, escribe una línea en la Bitácora (fecha, tarea, qué cambió, cómo se probó) y haz un commit en español: `T3: apuntar arrastrando el dedo o el mouse`.
+6. Si algo no se puede terminar: no la marques. Escribe en la Bitácora qué falta y por qué, y sigue con la siguiente.
+7. Cuando no queden tareas: actualiza el `README.md`, corre todas las pruebas una última vez, sube la rama (`git push -u origin loop-mejoras`) y abre un pull request hacia `main` con un resumen en español. Si no tienes permiso para subir, deja todo en commits locales y explícalo en la Bitácora.
 
----
-
-## 4. Reglas de juego
-
-### 4.1 Turnos
-- Orden: los equipos se turnan; dentro de cada equipo el pollito activo rota (el siguiente vivo). Opción en el lobby **Elegir pollito** (al inicio del turno, con ◀ ▶) o **Automático**.
-- Reloj de turno configurable: **30 / 45 / 60 s** (por defecto 45). Al disparar, quedan **5 s de retirada** para moverse.
-- El turno termina al acabar el reloj, al terminar la retirada, o si el pollito activo recibe daño.
-- Después de cada turno: pausa corta para ver resultados (pollitos que caen, barriles que explotan), luego se cobran los daños con números flotantes y se pasa al siguiente.
-- **Muerte súbita** tras un tiempo total configurable (por defecto 10 minutos): toda la vida baja a 1 y el agua sube un nivel por ronda.
-
-### 4.2 Movimiento
-- Caminar (lento, sube pendientes suaves), girar, **saltar hacia adelante**, **salto hacia atrás** (más alto).
-- Daño por caída a partir de cierta altura. Caer al agua = eliminado.
-- Física propia: el pollito es una cápsula contra la rejilla de vóxeles; proyectiles balísticos con gravedad y viento; rebote con coeficiente por arma; explosiones con daño y empuje según distancia.
-
-### 4.3 Vida y equipos
-- Vida inicial configurable: **100 / 150 / 200** (por defecto 100).
-- Pollitos por equipo: **2 / 3 / 4** (por defecto 4).
-- Máximo **4 equipos**.
-
-### 4.4 Cajas
-Caen en paracaídas (con sombrilla) al empezar algunos turnos:
-- **Caja de armas:** una munición extra de un arma aleatoria (las fuertes, poco probables).
-- **Caja de salud:** +25 de vida al pollito que la toca.
-- **Caja de utilidades:** doble daño, turno doble, o "visor" (muestra la trayectoria completa en el siguiente tiro).
-- Algunas cajas son trampa y explotan (poco probable).
-
-### 4.5 Objetos del mapa
-Barriles de aceite que explotan y dejan fuego, minas que se activan al acercarse (con pitido y 3 s), y en la historia objetos especiales por nivel.
+**Nunca** subas directo a `main`. **Nunca** borres trabajo sin dejarlo anotado.
 
 ---
 
-## 5. Armas y utilidades
+## 2. Revisión de lo que ya está hecho (primera tarea del loop)
 
-Cada arma tiene munición (∞ o número), daño, radio de explosión y empuje. Valores de partida (balancear en pruebas):
+Antes de agregar cosas, revisa el código actual y entiende cómo funciona.
 
-| # | Nombre | Equivale a (Worms) | Comportamiento |
+### Cómo está armado
+- **Next.js 16 (App Router) + React 19 + Three.js**, todo en JavaScript. Entrega en Vercel sin configurar nada.
+- `/` = pantalla principal (anfitrión). `/mando` = celular de cada jugador.
+- **El anfitrión manda**: `game/host.js` (clase `GameHost`) lleva la partida a 60 Hz con `game/match.js`, dibuja con `game/render.js` y habla con los celulares por **PeerJS** (servidor público solo para presentarlos; luego van directo).
+- **La isla** (`game/terrain.js`) es un campo de densidad (0–255, superficie en 128) generado por **semilla**. `game/mesher.js` la convierte en una malla lisa (Surface Nets). Las explosiones (`carve`) y las vigas (`beam`) quedan en `terrain.edits`.
+- **Copia en el celular** (`game/mirror.js`): genera la misma isla con la semilla, aplica `edits` y dibuja las fotos (`snap`, unas 25 por segundo) interpolando.
+- **CPU** (`game/ai.js`): prueba cientos de tiros con la misma física (`match.projStep`) repartidos en varios cuadros, con 3 dificultades.
+- **Interfaz**: `components/HostApp.jsx` (contraseña, lobby, HUD y resultados del TV), `components/ControllerApp.jsx` (mando), `components/TouchControls.jsx` (joystick, botones y cuadrícula de armas), `components/Shared.jsx` (ajustes, viento, barras, resultados y la tarjeta de tu pollito).
+- **Modelos** (`game/models.js`): pollitos de caricatura, robots y objetos hechos con esferas, conos y cilindros. **Sonido** (`game/audio.js`): todo sintetizado.
+- **Mensajes**: celular → anfitrión: `hello`, `pick`, `cfg`, `start`, `in` (joystick y botones mantenidos, unas 30 veces por segundo), `act` (saltar, arma, mecha, apuntar, mapa, rendirse), `view`, `react`, `pause`, `next`, `quit`, `resync`. Anfitrión → celular: `welcome`, `lobby`, `phase`, `turn`, `minit`, `snap`, `edit`, `buzz`, `paused`.
+
+### Puntos débiles conocidos (revísalos y anota lo que encuentres)
+- La física usa los vóxeles enteros y el dibujo usa la superficie lisa: los pollitos pueden quedar hasta 0,25 por encima del suelo; `render.js` los "pega" visualmente al suelo. Revisa que no se note al caminar en pendientes.
+- La partida de muestra del lobby (CPU contra CPU) corre también cuando el anfitrión es un celular: gasta batería.
+- Las etiquetas, números de daño y globos de diálogo son elementos HTML que se mueven en cada cuadro.
+- iPhone no permite pantalla completa ni bloquear la orientación desde la web.
+- `window.__fcMirror` existe a propósito: lo usan las pruebas.
+- Las fuentes (Lilita One y Nunito) vienen de Google Fonts; sin internet se usa una fuente parecida.
+
+Marca la revisión como hecha cuando hayas leído todos los archivos de `game/` y `components/`, hayas corrido las pruebas y hayas anotado en la Bitácora cualquier error que encuentres (si es un error real, agrégalo como tarea nueva al inicio de la sección 4).
+
+---
+
+## 3. Reglas del proyecto
+
+- Todo el texto del juego en **español de Colombia**, con tono divertido.
+- **Nada de imágenes ni audio descargados**: modelos, texturas, música y sonidos se generan con código.
+- **Sin dependencias nuevas** en `package.json` (las de prueba se instalan con `--no-save`).
+- Estilo visual: **3D liso tipo caricatura, como Worms 4**. Nada de cubos ni pixel art.
+- Estilo de los paneles: **caricatura de juguete** (tarjetas crema con borde café grueso, botones gorditos, fuente Lilita One). Usa las clases que ya existen en `app/globals.css`.
+- No se guardan partidas. Solo se guardan en `localStorage` preferencias y desbloqueos.
+- Con televisor, todo debe seguir funcionando igual que ahora.
+- La contraseña de la pantalla principal es la de Star League (hash en `game/constants.js`). No la cambies.
+
+---
+
+## 4. Tareas (en orden)
+
+- [ ] **T0. Revisión completa** (sección 2).
+
+- [ ] **T1. Error: "elijo el mapa y no cambia".**
+  Ya se comprobó en el navegador que la isla elegida sí llega a la configuración y que la partida arranca en esa isla. Lo que confunde es que **el fondo del lobby sigue mostrando una isla al azar** y que no hay una vista previa clara. También puede fallar el `<select>` nativo en algunos celulares.
+  - Cambia el `<select>` de isla (`components/Shared.jsx`, `ConfigPanel`) por una **cuadrícula de botones** con el nombre y los colores de cada isla, más "🎲 Aleatoria".
+  - Al elegir isla en el lobby, la partida de muestra del fondo se regenera en **esa isla** (`GameHost.setCfg` → `startDemo(isla)`). Con "Aleatoria" se puede seguir rotando.
+  - Muestra el nombre de la isla elegida bien visible en el lobby del TV y en el celular.
+  - Prueba: en `tests/e2e.mjs`, elegir isla desde el celular de J1 → el TV la marca, el fondo cambia a esa isla (`host.demo.island`) y la partida empieza ahí.
+
+- [ ] **T2. Solo J1 elige el mapa y los demás ajustes.**
+  - El servidor ya rechaza los ajustes que no vienen de J1 (`hostSlot`). Falta la interfaz:
+  - En el **TV**, los ajustes y el botón "¡A PELEAR!" solo se pueden tocar si J1 está en ese mismo dispositivo (jugador local o de teclado). Si J1 está en un celular, el TV muestra los ajustes **de solo lectura** con el aviso "Los ajustes los elige J1 desde su celular". Si todavía no hay nadie, también son de solo lectura.
+  - En los celulares que no son J1, muestra un **resumen de solo lectura** (modo, isla, equipos, CPU, vida, reloj) para que sepan qué se va a jugar.
+  - Prueba: J2 no puede cambiar nada y el TV no deja editar si J1 está en un celular.
+
+- [ ] **T3. Apuntar arrastrando el dedo (o con el mouse), con menos sensibilidad.**
+  Hoy se apunta con el joystick y es demasiado sensible.
+  - **Celular**: el **joystick solo camina y gira**. Para apuntar, el jugador **arrastra el dedo sobre la pantalla** (cualquier zona que no sea un botón, como un touchpad): horizontal gira la mira, vertical la sube o baja. Funciona en modo 🎯 y también en modo caminar (para girar fino). En el modo de mira del mapa (palomas, guacamaya, teletransporte), arrastrar mueve la mira roja.
+  - Mensaje nuevo `aimd` con el movimiento acumulado (`{ t: 'aimd', dyaw, dpitch }`, unas 30 veces por segundo). En `match.js`, un método `aimDelta(dyaw, dpitch)` que solo aplica en el turno del jugador y respeta los límites de inclinación.
+  - **Ajuste de sensibilidad** en el mando (Baja / Media / Alta, más "Invertir vertical"), guardado en `localStorage`. Valores de partida: 0,0025 / 0,004 / 0,007 radianes por píxel.
+  - **Mouse** (jugador de teclado en el TV y jugadores desde PC, ver T4): clic en el juego para capturar el mouse (*pointer lock*); mover el mouse apunta, **clic izquierdo mantenido** dispara con fuerza, **clic derecho** activa 🎯 y la **rueda** cambia de arma. `Esc` suelta el mouse.
+  - Si se deja el joystick como respaldo para apuntar, usa una curva suave (valor al cubo) y la mitad de la velocidad actual (`AIM_TURN` y `PITCH_SPEED` en `match.js`).
+  - Prueba: arrastrar en el celular cambia la mira poco a poco (comprobar `turn.pitch` y el giro del pollito) y el joystick ya no mueve la mira.
+
+- [ ] **T4. Jugar desde otro PC (no solo celulares).**
+  Hoy, en un PC, solo el anfitrión ve el juego. Cualquier jugador debe poder entrar desde **otro computador**.
+  - `/mando` abierto en un PC (detectar `pointer: fine`) entra en **modo PC**: el juego se ve a pantalla completa por defecto (como "Ver el juego aquí"), sin los botones táctiles. Se puede cambiar a modo celular si hace falta.
+  - Controles del modo PC: los mismos del teclado del TV (W/S caminar, A/D girar, J saltar, K salto atrás, E/Q o rueda para armas, 1–5 mecha, C mapa, Esc pausa) más el **mouse para apuntar** de T3. Botón para abrir la cuadrícula de armas con el mouse.
+  - HUD en el modo PC igual al del TV: turno, reloj, viento, arma, barra de fuerza y equipos (saca el HUD de `HostApp.jsx` a un componente compartido).
+  - En el lobby del PC se personaliza igual que en el celular (`MyChicken`).
+  - En el lobby del TV agrega el texto "o abre el link en otro PC".
+  - Prueba: una página de escritorio en `/mando` se une, ve la partida y juega su turno con teclado y mouse.
+
+- [ ] **T5. Elegir con qué pollito jugar.**
+  Ajuste nuevo en el lobby: "Pollito del turno: **Automático** / **Elegir**". Con "Elegir", al empezar el turno el jugador cambia de pollito con ◀ ▶ (o Tab en PC) durante los primeros segundos o hasta que se mueva o dispare. La CPU sigue en automático.
+
+- [ ] **T6. Radar o brújula en pantalla** (como Worms 4): círculo en una esquina con la posición de todos los pollitos (color de su equipo), orientado según la cámara, con el pollito del turno resaltado. En el TV, en el modo PC y en el celular con vista. En celular debe ser pequeño y no tapar botones.
+
+- [ ] **T7. Que la cámara no quede tapada.** Si una decoración o una montaña queda entre la cámara y el pollito del turno (rayo de la cámara al pollito contra el terreno), acerca la cámara o súbela hasta verlo. La transición debe ser suave, sin saltos.
+
+- [ ] **T8. Más animaciones y caras.** Voltereta en el salto atrás; aleteo al caer; cara de susto (ojos grandes, boca abierta) al recibir daño o estar cerca de una mina; festejo (saltitos y alas arriba) del equipo ganador; los pollitos quietos miran al del turno. Todo con transformaciones de las piezas que ya tiene el modelo en `models.js`.
+
+- [ ] **T9. Vista en primera persona para apuntar** la bazuca, la granada y el maíz pira (opcional, botón 👁‍🗨 o tecla V): cámara en la cabeza del pollito con la mira en el centro de la pantalla.
+
+- [ ] **T10. Cajas y barriles.** Cajas trampa (10 %, explotan al tocarlas, con un pequeño aviso visual); utilidad **"Visor"** que muestra la trayectoria completa del siguiente tiro; los barriles al explotar dejan **fuego** unos segundos que hace 5 de daño por segundo a quien lo toque.
+
+- [ ] **T11. Detalles de cada isla.** Espuma en la Bañera que frena al caminar; bolas de billar que ruedan cuando una explosión las empuja; imanes de nevera (metal que no se rompe) en la Cocina; bloques de gelatina que hacen rebotar en el Cuarto de Juguetes. Cada isla con al menos un detalle propio, sin romper la sincronización con los celulares (todo lo que cambie el terreno va por `edits`; lo que se mueve va en `snap`).
+
+- [ ] **T12. Modo Historia: "El Gran Robo de los Huevos".** Es la tarea más grande; divídela en subtareas.
+  - Cooperativo: todos los jugadores juntos contra la CPU, de una sentada (30–40 min), **sin guardar**, con opción de empezar en cualquier nivel, **reintentar** o **saltar nivel** si pierden.
+  - **Trama**: el **Zorro Rufo**, un zorro de peluche con monóculo, se robó el Huevo Dorado de la Granja de Juguete y armó un ejército de **pollitos de lata**. Los pollitos de los jugadores cruzan la casa de los niños para recuperarlo.
+
+    | Nivel | Isla | Objetivo |
+    | --- | --- | --- |
+    | 1 | Arenero del Patio | Tutorial jugado: eliminar 2 pollitos de lata (aprender a caminar, apuntar y disparar) |
+    | 2 | Bañera Espumosa | Eliminar al equipo enemigo; el agua sube cada 3 rondas |
+    | 3 | Cocina Gigante | Recoger 3 Huevitos (cajas especiales) antes de 8 rondas |
+    | 4 | Cuarto de Juguetes | Proteger a la **Gallina Abuela** (aliada sin armas) hasta eliminar a todos |
+    | 5 | Mesa de Billar | Destruir 4 máquinas de lata del zorro con munición limitada |
+    | 6 | Castillo del Zorro (noche) | Jefe: **Sargento Lata**, robot gigante con mucha vida y escudo que solo se rompe por detrás |
+    | 7 | Arenero (atardecer) | Supervivencia: aguantar 6 rondas contra oleadas |
+    | 8 | Castillo del Zorro | Final: **Zorro Rufo** en su robot de juguete, con fases (cambia de arma y lanza piezas) |
+
+  - **Cinemáticas** antes y después de cada nivel, con la cámara del propio motor (encuadres, paneos, zoom) y cajas de diálogo con retrato. **Hablan los pollitos que eligieron los jugadores**, más el Zorro Rufo, la Gallina Abuela y los jefes. Avanzan con Enter, clic o "Siguiente" en el celular; "Saltar" solo J1. Se ven también en cada celular y PC con vista.
+  - Sugerencia técnica: `game/story.js` (niveles, objetivos, guiones), `game/cinema.js` (director de cámara y diálogos), fase nueva `cinematic` en `host.js` y en el mando, objetivos especiales en `match.js` (condiciones de victoria y derrota por nivel, unidades especiales, oleadas). El accesorio `zorro` ya existe en `models.js`: al terminar la historia se **desbloquea** (guardado en el `localStorage` del anfitrión).
+  - Prueba: completar los 8 niveles con jugadores automáticos (puedes reutilizar `CpuBrain` para los humanos en `tests/sim.mjs`), reintentar, saltar nivel y empezar en cualquier nivel.
+
+- [ ] **T13. Rendimiento en celular.**
+  - Medidor de cuadros por segundo con `?fps=1` en la URL.
+  - Si el juego va a menos de 30 cuadros por segundo durante 5 segundos, bajar la calidad sola (menos resolución, menos partículas, sin olas) y avisarlo con un mensaje pequeño.
+  - Pausar la partida de muestra del lobby cuando el anfitrión es un celular.
+  - En iPhone: que el sonido arranque con el primer toque, y que el mensaje "Gira el celular" funcione aunque no se pueda bloquear la orientación.
+  - Prueba con la emulación de dispositivos de Chromium y CPU lenta (`page.emulateCPUThrottling` o CDP `Emulation.setCPUThrottlingRate` en 4×). Anota los resultados en la Bitácora. **Deja en la Bitácora una lista corta de cosas que el dueño debe probar en celulares de verdad** (Android de gama media e iPhone).
+
+- [ ] **T14. Cierre.** Actualiza el `README.md` (controles nuevos, modo PC, Historia, ajustes), corre todas las pruebas, revisa todas las capturas, sube la rama y abre el pull request (regla 7).
+
+---
+
+## 5. Cómo probar a mano
+
+```bash
+npm run build && npm start          # juego en http://localhost:3000
+node tests/peer-server.mjs          # servidor de conexión local (otra terminal)
+```
+- Pantalla principal: `http://localhost:3000/?peerhost=127.0.0.1&peerport=9000&peerpath=/` (contraseña de Star League).
+- Mando: `http://localhost:3000/mando?c=CODIGO&peerhost=127.0.0.1&peerport=9000&peerpath=/`
+- Sin los parámetros `peer…` se usa el servidor público de PeerJS (necesita internet).
+- Un celular no puede abrir `localhost`: para probar con celulares de verdad usa la IP del computador en la misma red (por ejemplo `http://192.168.1.20:3000`) o el link de Vercel.
+
+---
+
+## 6. Bitácora
+
+| Fecha | Tarea | Qué se hizo | Cómo se probó |
 | --- | --- | --- | --- |
-| 1 | **Bazuca de Huevo** | Bazuca | Huevo que vuela afectado por el viento y explota al tocar. ∞ |
-| 2 | **Huevo Granada** | Granada | Rebota; mecha de 1–5 s elegible. ∞ |
-| 3 | **Maíz Pira** | Granada de racimo | Explota y suelta 5 crispetas que también explotan. 3 |
-| 4 | **Escopeta de Semillas** | Escopeta | Dos disparos rectos por turno, sin viento. ∞ |
-| 5 | **Picotazo de Fuego** | Puño de fuego | Golpe hacia arriba que lanza al rival. ∞ |
-| 6 | **La Chancla** | Bate de béisbol | Golpe que manda volando al rival (frase de mamá colombiana). 2 |
-| 7 | **Bandada de Palomas** | Ataque aéreo | Se elige un punto en la vista general; pasan palomas soltando "regalitos" explosivos. 1 |
-| 8 | **Vela de Cumpleaños** | Dinamita | Se deja en el piso, explota a los 5 s. 2 |
-| 9 | **Mina Nido** | Mina | Se coloca; explota cuando alguien se acerca. 2 |
-| 10 | **Mamá Gallina** | Oveja | Corre sola hacia adelante, salta obstáculos; se detona con el botón o sola a los 10 s. 1 |
-| 11 | **Huevo de Oro** | Granada sagrada | Gran explosión; antes suena un coro celestial "¡Aleluyaaa!" generado por código. 1 |
-| 12 | **Guacamaya Teledirigida** | Misil teledirigido | Se marca un objetivo; vuela hacia él esquivando un poco. 1 |
-
-Utilidades (no terminan el turno, salvo que se diga):
-- **Cuerda de Lombriz** (cuerda ninja): se engancha al terreno, balanceo, soltar y volver a lanzar.
-- **Ventilador a la Espalda** (jetpack): vuelo con combustible limitado.
-- **Sombrilla** (paracaídas): caer despacio.
-- **Teletransporte** (termina el turno): ir a un punto elegido en la vista general.
-- **Viga de Juguete** (construir puente): colocar una pieza de bloques.
-- **Saltar turno** y **Rendirse** (rendirse pide confirmación).
-
-En **Historia** algunas armas se desbloquean por nivel. En **Versus** y **Cooperativo**, J1 elige en el lobby el set de armas: **Clásico** (como la tabla) o **Locura** (más munición de las fuertes).
-
----
-
-## 6. Controles en el celular
-
-El celular se juega **en horizontal** (pedir pantalla completa y bloquear orientación en Android; en iPhone pedir permiso de sensores solo si se usan).
-
-### 6.1 Cuando es tu turno
-| Izquierda | Derecha |
-| --- | --- |
-| **Joystick** virtual: caminar/girar; en modo apuntar, mueve la mira | **DISPARAR** grande: mantener para cargar potencia, soltar para lanzar (armas sin potencia disparan al tocar) |
-| | **SALTAR** (toque) / **SALTO ATRÁS** (doble toque o botón aparte) |
-| | **ARMAS**: abre la cuadrícula de armas con íconos, munición y nombre |
-| | **🎯 APUNTAR**: cambia a la vista sobre el hombro |
-| | **👁 CÁMARA**: vista general del mapa |
-
-- Arrastrar el dedo en la mitad derecha (fuera de los botones) también mueve la mira, para apuntar fino.
-- Mecha de granadas: botones 1–5 que aparecen al elegir un arma con mecha.
-- Armas que piden un punto (palomas, teletransporte, guacamaya): se toca el punto en la vista general.
-- Vibración cuando empieza tu turno, cuando te dan y cuando algo explota cerca.
-
-### 6.2 Cuando no es tu turno
-- El mando muestra de quién es el turno, el reloj, el viento y la vida de tu equipo.
-- Botones de **reacción** (¡Pío!, 😂, 😱, 👏) que aparecen como globitos en la pantalla del juego.
-- **Pausa** (II) disponible para todos; **Saltar cinemática** solo para J1.
-
-### 6.3 "Solo mando" vs "Ver el juego aquí"
-- **Solo mando** (mirando el TV): interfaz grande con los controles y la información del turno.
-- **Ver el juego aquí:** el juego en 3D ocupa la pantalla y los botones van semitransparentes encima (joystick a la izquierda, acciones a la derecha). Se cambia con el botón 🎮 / 📺.
-- Sin pantalla principal, la vista está activada por defecto.
-
-### 6.4 Teclado de respaldo en el PC
-- **J con WASD** (W para unirse): WASD mover, Espacio saltar, Q salto atrás, E armas, flechas o mouse para apuntar, mantener Enter/clic para disparar, C cámara.
-- `M` silencia, `Esc` pausa, `Enter` empieza o avanza cinemáticas.
-
----
-
-## 7. Lobby
-
-Diseño igual al de StarLeague (adaptado a TV y a celular vertical/horizontal):
-- Logo animado, QR, código, link y **Compartir link**.
-- Puestos J1–J4 con su color. Cada jugador desde su celular elige **color del equipo**, **accesorio** (casco, sombrero vueltiao, gorra, corona, bandana…), **nombre del equipo** y puede cambiar los nombres de sus pollitos (por defecto nombres graciosos aleatorios: Pío, Huevito, Plumón, Kiki, Tostado…).
-- Solo **J1** configura (desde su celular o con el mouse en el PC):
-  - **Modo:** Versus por equipos / Cooperativo contra CPU / Historia.
-  - **Cómo se arman los equipos** (en Versus y Cooperativo):
-    - **Cada jugador un equipo** (por defecto).
-    - **Equipos compartidos:** se arrastran o asignan los jugadores a los equipos (ej. 2 contra 2). En un equipo compartido, los turnos del equipo se reparten **por turnos entre sus jugadores** (J1 mueve un pollito, el siguiente turno de ese equipo lo juega J3, etc.).
-  - Pollitos por equipo, vida, reloj de turno, set de armas, isla (o aleatoria), muerte súbita, calidad gráfica.
-  - En Cooperativo: **número de equipos CPU (1–3)** y **dificultad CPU** (Fácil / Normal / Difícil).
-  - En Historia: **empezar en cualquier nivel**.
-- Con un solo jugador, Versus se completa con equipos CPU.
-
----
-
-## 8. Modos
-
-### 8.1 Versus por equipos
-Todos contra todos (o equipos compartidos). Gana el último equipo con pollitos vivos. Pantalla de resultados con estadísticas divertidas: más daño hecho, pollito que más se cayó al agua, "autogol" (daño a tu propio equipo). Botones **Revancha** y **Volver al lobby**.
-
-### 8.2 Cooperativo contra CPU
-Todos los humanos en el mismo bando (un equipo compartido o varios equipos aliados, según configuración) contra 1–3 equipos manejados por la CPU. Los equipos aliados no se pueden dañar entre sí con **fuego amigo** apagado (opción, por defecto apagado en cooperativo).
-
-**IA de la CPU** (en `game/ai.js`):
-1. Elige objetivo (el más débil, el más cercano o el que más daño hace).
-2. Prueba combinaciones de arma, ángulo y potencia **simulando** el tiro con la misma física (sin dibujar) y se queda con la mejor que dañe al enemigo sin dañarse a sí misma.
-3. Si no encuentra tiro, camina, usa cuerda o teletransporte, o recoge una caja.
-4. Dificultad: Fácil agrega error grande al ángulo/potencia y casi no usa armas fuertes; Difícil casi no falla y aprovecha el viento y el agua.
-5. Debe "pensar" visiblemente: mover la mira, dudar un poco, y decir frases.
-
-### 8.3 Historia con cinemáticas: **"El Gran Robo de los Huevos"**
-Cooperativa, como en StarLeague: **todos los jugadores juntos** contra la CPU, sin guardar, de una sentada (~30–40 min), empezar en cualquier nivel, **reintentar** o **saltar nivel** si fallan.
-
-**Trama:** el **Zorro Rufo**, un zorro de peluche con monóculo, se robó el Huevo Dorado de la Granja de Juguete y armó un ejército de **pollitos de lata** (pollitos robot, versión metálica de los pollitos). Los pollitos de los jugadores cruzan la casa de los niños para recuperarlo.
-
-| Nivel | Isla (tema) | Objetivo |
-| --- | --- | --- |
-| 1 | **Arenero del Patio** | Tutorial jugado: eliminar 2 pollitos de lata. Aprender a caminar, apuntar y disparar |
-| 2 | **Bañera Espumosa** | Eliminar al equipo enemigo; el agua sube cada 3 rondas |
-| 3 | **Cocina Gigante** | Recoger 3 Huevitos (cajas especiales) antes de 8 rondas |
-| 4 | **Cuarto de Juguetes** | Proteger a la **Gallina Abuela** (aliada sin armas) hasta eliminar a todos |
-| 5 | **Mesa de Billar** | Destruir 4 máquinas de lata del zorro con munición limitada |
-| 6 | **Jardín de Noche** | Jefe: **Sargento Lata**, pollito robot gigante con mucha vida y escudo que solo se rompe por detrás |
-| 7 | **Ático Polvoriento** | Supervivencia: aguantar 6 rondas contra oleadas |
-| 8 | **Castillo del Zorro** | Final: **Zorro Rufo** en su mecha de juguete, con fases (cambia de arma y lanza piezas) |
-
-- **Cinemáticas** antes y después de cada nivel, con la cámara 3D del propio motor (encuadres, paneos, zoom), diálogos en cajas de texto con retrato voxel del que habla, y chillidos sintetizados como "voz".
-- **En las cinemáticas hablan los pollitos de los equipos que eligieron los jugadores** (igual que en StarLeague con los personajes escogidos), más el Zorro Rufo, la Gallina Abuela y los jefes.
-- Avanzan con Enter, clic o **Siguiente** en el celular; **Saltar** solo J1.
-- Las cinemáticas se ven con imagen en cada celular que tenga la vista activada.
-- **Basta con que el equipo cumpla el objetivo**; si todos los pollitos humanos mueren, se pierde el nivel.
-- Al terminar la historia se desbloquea un **accesorio especial** (el monóculo del Zorro) y el **Zorro Rufo como apariencia** de pollito disfrazado. El desbloqueo se guarda en el dispositivo anfitrión.
-
----
-
-## 9. Islas (mapas)
-
-Seis islas para Versus/Cooperativo (además de las de la historia, que también quedan disponibles en Versus):
-Arenero del Patio, Bañera Espumosa, Cocina Gigante, Cuarto de Juguetes, Mesa de Billar, Castillo del Zorro, y **Aleatoria** (generada por semilla).
-
-Cada una con su paleta, cielo, decoración voxel propia, música propia y un detalle de jugabilidad (espuma que frena, imanes de nevera de metal indestructible, bolas de billar que ruedan con las explosiones, etc.).
-
----
-
-## 10. Sonido y música
-
-- Todo con **Web Audio API**, generado por código (como `game/audio.js` de StarLeague): canciones chiptune en bucle (menú, una por isla, jefe, historia, victoria, derrota), efectos (explosiones, rebotes, salto, agua, caja, mina).
-- **Voces de los pollitos:** chillidos sintetizados con tono distinto por equipo, con texto en globito: "¡Pío pío, toma esto!", "¡Me voy de pico!", "¡Ay, mi plumaje!", "¡Esa no la vi venir!", "¡Upa!", "¡Chao, pescao!" (al caer al agua). Al usar La Chancla: "¡Venga para acá, mijo!".
-- Coro "¡Aleluyaaa!" del Huevo de Oro sintetizado.
-- El sonido puede activarse también en el celular con vista.
-
----
-
-## 11. Estructura de archivos sugerida
-
-```
-app/
-  layout.js
-  page.js              → pantalla principal (anfitrión)
-  mando/page.js        → mando del celular
-  globals.css
-  icon.svg
-components/
-  HostApp.jsx          → contraseña, lobby, HUD, cinemáticas, resultados
-  ControllerApp.jsx    → mando, lobby del celular, vista en el celular
-  TouchControls.jsx    → joystick, botones, cuadrícula de armas
-game/
-  constants.js         → nombre, PEER_PREFIX, PASSWORD_HASH, colores, accesorios, armas
-  sha256.js
-  peeropts.js
-  net.js               → PeerJS del anfitrión y del mando, protocolo
-  host.js              → motor del anfitrión: fases, turnos, lobby, red (equivalente a engine.js)
-  rules.js             → turnos, reloj, viento, cajas, muerte súbita, condiciones de victoria
-  physics.js           → cápsula vs vóxeles, balística, explosiones, daño
-  terrain.js           → rejilla de vóxeles, generación por semilla, carve, chunks
-  mesher.js            → mallas de chunks para Three.js
-  weapons.js           → definición y comportamiento de cada arma y utilidad
-  ai.js                → IA de la CPU
-  render.js            → escena Three.js, cámaras, agua, partículas, HUD 3D
-  models.js            → pollitos, accesorios, cajas, armas y decoración en vóxeles por código
-  mirror.js            → copia en el celular (snapshots + carve + interpolación)
-  audio.js             → música y efectos por código
-  voices.js            → chillidos y frases
-  story.js             → niveles, objetivos y guiones de cinemáticas
-  cinema.js            → director de cámara y diálogos
-  islands.js           → temas y parámetros de cada isla
-README.md
-```
-
----
-
-## 12. Orden de trabajo (hitos)
-
-1. **Base Next.js + red:** páginas `/` y `/mando`, contraseña, PeerJS, QR, código, lobby con 4 puestos, reconexión, compartir link, jugar sin TV. *Prueba:* 3 celulares se unen, eligen color y J1 empieza.
-2. **Terreno y render 3D:** isla voxel por semilla, chunks, agua, cielo, cámara libre, explosión que rompe el terreno. *Prueba:* 60 fps en PC, ≥ 30 fps en celular medio.
-3. **Pollitos y física:** caminar, saltar, caer, daño por caída, agua.
-4. **Turnos y armas básicas:** reloj, retirada, viento, Bazuca, Granada, Escopeta, Picotazo, daño y empuje, victoria.
-5. **Mando completo:** controles táctiles, apuntar sobre el hombro, cuadrícula de armas, reacciones, vibración, teclado de respaldo.
-6. **Vista en el celular:** `matchInit`, `snap`, `carve`, interpolación, cinemáticas en el celular.
-7. **Resto de armas, utilidades, cajas, minas, barriles, muerte súbita.**
-8. **Equipos configurables y CPU:** equipos compartidos, IA con 3 dificultades, modo Cooperativo.
-9. **Historia:** 8 niveles, objetivos, jefes, cinemáticas, desbloqueos.
-10. **Audio y voces**, pulido visual, calidad gráfica, balance.
-11. **README y empaquetado .zip.**
-
----
-
-## 13. Pruebas antes de entregar
-
-- `npm run build` sin errores.
-- Partida Versus de 2 humanos + 1 CPU completa, desde el lobby hasta resultados y revancha.
-- Equipos compartidos 2 contra 2: los turnos del equipo se reparten bien entre sus jugadores.
-- Cooperativo contra 2 CPU en las 3 dificultades: la CPU dispara, camina, usa al menos 4 armas distintas y en Difícil acierta la mayoría de tiros sin viento extremo.
-- Historia completa del nivel 1 al 8 (se puede con jugadores automáticos), reintentar, saltar nivel y empezar en cualquier nivel.
-- Jugar sin TV: un celular anfitrión como J1 + otro con vista + otro en Solo mando.
-- Un celular se desconecta en su turno y vuelve: recupera su puesto.
-- El terreno queda igual en el TV y en los celulares después de 30 explosiones (comparar un resumen/hash del terreno).
-- Tamaños: TV 1920×1080, celular horizontal y vertical (lobby), sin scroll horizontal ni elementos encimados.
-- Sin errores en la consola.
-
----
-
-## 14. README.md (en español)
-
-Debe explicar, como el de StarLeague:
-1. Qué es el juego.
-2. **Cómo subirlo a Vercel** paso a paso (repositorio en GitHub → Add New Project → Deploy, sin configurar nada) y cómo probarlo con `npm install` y `npm run dev`.
-3. La contraseña y cómo cambiarla.
-4. Cómo se juega: con TV y sin TV, unirse con el QR, controles del celular y del teclado.
-5. Modos, configuración del lobby y la tabla de niveles de la historia.
-6. Tabla de armas.
-7. Notas: mismo Wi-Fi recomendado, permisos de iPhone, consumo de datos, qué pasa si alguien se desconecta.
-
----
-
-## 15. Entrega final
-
-Un único archivo **`plumazo.zip`** con el proyecto Next.js completo (sin `node_modules` ni `.next`), que al descomprimirlo, subirlo a GitHub e importarlo en Vercel funcione a la primera.
+| 2026-10-23 | — | Plan creado. Comprobado que la selección de isla sí llega a la configuración y a la partida; el problema visible es el fondo del lobby (ver T1). `tests/sim.mjs` y `tests/e2e.mjs` pasan completos. | Navegador automático (TV + celulares, sin TV, cooperativo, teclado). |
