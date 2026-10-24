@@ -12,7 +12,8 @@ const MAX_POWER_TIME = 1.5;
 const BOOM = {
   bazuca: { r: 2.1, d: 50 }, granada: { r: 2.1, d: 50 }, maiz: { r: 1.6, d: 25 }, pop: { r: 1.3, d: 18 },
   oro: { r: 4.4, d: 100 }, regalo: { r: 1.7, d: 30 }, guacamaya: { r: 2.2, d: 55 }, vela: { r: 2.6, d: 70 },
-  mina: { r: 2.0, d: 45 }, gallina: { r: 3.0, d: 75 }, barril: { r: 2.6, d: 45 }, cajaArma: { r: 2.0, d: 30 },
+  mina: { r: 2.0, d: 45 }, gallina: { r: 3.0, d: 75 }, barril: { r: 2.6, d: 45 },
+  cajaArma: { r: 2.0, d: 30 }, cajaSalud: { r: 2.0, d: 30 }, cajaUtil: { r: 2.0, d: 30 },
   escopeta: { r: 0.9, d: 25 }, muerte: { r: 1.3, d: 15 },
 };
 const WIND_K = { bazuca: 7, regalo: 7, pop: 2 };
@@ -37,7 +38,7 @@ export class Match {
     this.over = null;
     this.r = rng(seed ^ 0xabcdef);
     this.stats = {};
-    this.teams = teams.map((t, i) => ({ ...t, idx: i, next: 0, turns: 0, inv: startAmmo(cfg.weaponSet), dd: false }));
+    this.teams = teams.map((t, i) => ({ ...t, idx: i, next: 0, turns: 0, inv: startAmmo(cfg.weaponSet), dd: false, visor: false }));
     for (const t of this.teams) this.stats[t.id] = { dmg: 0, self: 0, drown: 0, kills: 0 };
     // aparecer pollitos
     const per = cfg.chickens;
@@ -164,7 +165,8 @@ export class Match {
     if (!sp) return;
     const roll = this.r();
     const kind = roll < 0.4 ? 'cajaSalud' : roll < 0.8 ? 'cajaArma' : 'cajaUtil';
-    this.addObj({ kind, x: sp.x, y: 23, z: sp.z, para: true });
+    const trap = this.r() < 0.1;
+    this.addObj({ kind, x: sp.x, y: 23, z: sp.z, para: true, trap });
     this.emit({ k: 'sfx', s: 'crate' });
   }
 
@@ -305,7 +307,7 @@ export class Match {
         const p = this.addObj({ kind: w.id, x: ox, y: oy, z: oz, vx: dir.x * sp, vy: dir.y * sp, vz: dir.z * sp, owner: T.team, src: ch.id, fuse: w.fuse ? T.fuse : 3, dd, proj: true });
         if (w.id === 'oro') { p.fuse = 3; this.emit({ k: 'sfx', s: 'aleluya' }); }
         T.track = p.id;
-        use(); team.dd = false;
+        use(); team.dd = false; team.visor = false;
         this.emit({ k: 'sfx', s: w.id === 'bazuca' ? 'shoot' : 'throw' });
         this.say(ch, 'fire');
         this.startRetreat();
@@ -314,7 +316,7 @@ export class Match {
       case 'escopeta': {
         T.shots++;
         this.hitscan(ch, dir, T.team, dd);
-        if (T.shots >= 2) { team.dd = false; this.startRetreat(); }
+        if (T.shots >= 2) { team.dd = false; team.visor = false; this.startRetreat(); }
         break;
       }
       case 'picotazo': case 'chancla': {
@@ -472,11 +474,12 @@ export class Match {
     c.air = true; c.ground = false; c.knock = true; c.rope = null; c.jet = 0; c.peakY = c.y;
   }
 
-  damage(c, amount, team) {
+  damage(c, amount, team, opts = {}) {
     if (!c.alive || amount <= 0) return;
     const victimTeam = c.team;
     if (team !== undefined && team !== null && team !== victimTeam && this.alliance(team) === this.alliance(victimTeam) && !this.cfg.friendly) return;
     amount = Math.round(amount);
+    if (amount <= 0) return;
     c.hp = Math.max(0, c.hp - amount);
     c.hurtT = 0.6;
     this.emit({ k: 'dmg', id: c.id, n: amount, x: c.x, y: c.y + H + 0.4, z: c.z });
@@ -487,9 +490,9 @@ export class Match {
     if (c.hp <= 0) {
       c.killer = team;
       this.say(c, 'dead');
-    } else this.say(c, 'hurt');
+    } else if (!opts.silent) this.say(c, 'hurt');
     // si le pegan al del turno, se acaba el turno
-    if (this.turn && c.id === this.turn.ch && (this.phase === 'play' || this.phase === 'retreat')) this.endTurn();
+    if ((!opts.noEndTurn || c.hp <= 0) && this.turn && c.id === this.turn.ch && (this.phase === 'play' || this.phase === 'retreat')) this.endTurn();
   }
 
   explode(x, y, z, r, dmg, team, opts = {}) {
@@ -535,6 +538,10 @@ export class Match {
         const a = (i / 5) * Math.PI * 2 + this.r();
         this.addObj({ kind: 'pop', x: o.x, y: o.y + 0.6, z: o.z, vx: Math.cos(a) * 4.5, vy: 7 + this.r() * 3, vz: Math.sin(a) * 4.5, owner: o.owner, proj: true, fuse: 1.2 + this.r() * 0.6, dd: o.dd });
       }
+    }
+    if (o.kind === 'barril') {
+      const fy = Math.max(this.water + 0.05, this.terrain.surfaceY(o.x, o.z, o.y + 2));
+      if (fy > this.water) this.addObj({ kind: 'fuego', x: o.x, y: fy, z: o.z, owner: o.owner, t: 5.0, r: 2.0 });
     }
     if (o.kind === 'oro') this.emit({ k: 'sfx', s: 'oroBoom' });
     if (o.kind === 'gallina') this.emit({ k: 'feathers', x: o.x, y: o.y + 0.8, z: o.z });
@@ -897,13 +904,36 @@ export class Match {
         o.trig -= dt;
         if (o.trig <= 0) this.explodeObj(o);
       }
+    } else if (o.kind === 'fuego') {
+      o.t -= dt;
+      if (o.t <= 0) { o.dead = true; return; }
+      const rad = o.r || 2.0;
+      for (const c of this.chickens) {
+        if (!c.alive) continue;
+        if (Math.hypot(c.x - o.x, c.z - o.z) < rad && Math.abs((c.y + 0.4) - o.y) < 1.6) {
+          c.fireDmg = (c.fireDmg || 0) + 5 * dt;
+          if (c.fireDmg >= 1) {
+            const d = Math.floor(c.fireDmg);
+            c.fireDmg -= d;
+            this.damage(c, d, o.owner, { noEndTurn: true, silent: true });
+          }
+        }
+      }
     } else if (o.kind.startsWith('caja') && o.ground) {
-      const ch = this.activeChicken();
-      if (ch && ch.alive && Math.hypot(ch.x - o.x, ch.z - o.z) < 1.0 && Math.abs(ch.y - o.y) < 1.3) this.pickCrate(ch, o);
+      const act = this.activeChicken();
+      const ch = (act && act.alive && Math.hypot(act.x - o.x, act.z - o.z) < 1.0 && Math.abs(act.y - o.y) < 1.3)
+        ? act
+        : this.chickens.find((c) => c.alive && Math.hypot(c.x - o.x, c.z - o.z) < 1.0 && Math.abs(c.y - o.y) < 1.3);
+      if (ch) this.pickCrate(ch, o);
     }
   }
 
   pickCrate(ch, o) {
+    if (o.trap) {
+      this.emit({ k: 'pickup', id: ch.id, text: '¡Caja trampa!', icon: '💣', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      this.explodeObj(o);
+      return;
+    }
     o.dead = true;
     const team = this.teams[ch.team];
     if (o.kind === 'cajaSalud') {
@@ -917,8 +947,17 @@ export class Match {
       this.emit({ k: 'pickup', id: ch.id, text: `+1 ${w.name}`, icon: w.icon, x: ch.x, y: ch.y + H + 0.4, z: ch.z });
       this.emit({ k: 'sfx', s: 'pickup' });
     } else {
-      if (this.r() < 0.5) { team.dd = true; this.emit({ k: 'pickup', id: ch.id, text: '¡Doble daño!', icon: '💪', x: ch.x, y: ch.y + H + 0.4, z: ch.z }); }
-      else { if (this.turn) this.turn.clock += 15; this.emit({ k: 'pickup', id: ch.id, text: '+15 segundos', icon: '⏱️', x: ch.x, y: ch.y + H + 0.4, z: ch.z }); }
+      const roll = o.util || (this.r() < 0.34 ? 'dd' : this.r() < 0.68 ? 'visor' : 'time');
+      if (roll === 'dd') {
+        team.dd = true;
+        this.emit({ k: 'pickup', id: ch.id, text: '¡Doble daño!', icon: '💪', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      } else if (roll === 'visor') {
+        team.visor = true;
+        this.emit({ k: 'pickup', id: ch.id, text: '¡Visor!', icon: '🔭', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      } else {
+        if (this.turn) this.turn.clock += 15;
+        this.emit({ k: 'pickup', id: ch.id, text: '+15 segundos', icon: '⏱️', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      }
       this.emit({ k: 'sfx', s: 'pickup' });
     }
   }
@@ -989,7 +1028,7 @@ export class Match {
     const q = (v) => Math.round(v * 100) / 100;
     return {
       ch: this.chickens.map((c) => [q(c.x), q(c.y), q(c.z), q(c.yaw), c.hp, (c.alive ? 1 : 0) | (c.air ? 2 : 0) | (c.movingT > 0 ? 4 : 0) | (c.rope ? 8 : 0) | (c.jet > 0 ? 16 : 0) | (c.umbrella ? 32 : 0) | (c.dying > 0 ? 64 : 0) | (c.hurtT > 0 ? 128 : 0) | (c.backflip > 0 ? 256 : 0), c.rope ? [q(c.rope.x), q(c.rope.y), q(c.rope.z)] : 0, q(c.walk % 10)]),
-      o: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => [o.id, o.kind, q(o.x), q(o.y), q(o.z), q(o.yaw), o.para ? 1 : 0, o.trig ? 1 : 0, o.name || 0]),
+      o: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => [o.id, o.kind, q(o.x), q(o.y), q(o.z), q(o.yaw), o.para ? 1 : 0, (o.trig || o.trap) ? 1 : 0, o.name || 0]),
       cam: this.camera(),
       w: [q(this.wind.x), q(this.wind.z)],
       water: q(this.water),
@@ -1001,15 +1040,16 @@ export class Match {
   tview() {
     const T = this.turn;
     const q = (v) => Math.round(v * 100) / 100;
-    return T ? { team: T.team, ch: T.ch, clock: Math.ceil(T.clock), retreat: Math.ceil(T.retreat), weapon: T.weapon, mode: T.mode, fp: !!T.fp, pitch: q(T.pitch), power: q(T.power), charging: T.charging ? 1 : 0, cursor: T.cursor ? [q(T.cursor.x), q(T.cursor.z)] : 0, fuse: T.fuse, shots: T.shots, walker: !!T.walker } : null;
+    const team = T ? this.teams[T.team] : null;
+    return T ? { team: T.team, ch: T.ch, clock: Math.ceil(T.clock), retreat: Math.ceil(T.retreat), weapon: T.weapon, mode: T.mode, fp: !!T.fp, visor: !!(team && team.visor), pitch: q(T.pitch), power: q(T.power), charging: T.charging ? 1 : 0, cursor: T.cursor ? [q(T.cursor.x), q(T.cursor.z)] : 0, fuse: T.fuse, shots: T.shots, walker: !!T.walker } : null;
   }
 
   // estado para dibujar directamente en el anfitrión (sin redondear)
   view() {
     return {
       chickens: this.chickens.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, yaw: c.yaw, hp: c.hp, alive: c.alive, air: c.air, walking: c.movingT > 0, rope: c.rope ? [c.rope.x, c.rope.y, c.rope.z] : null, jet: c.jet > 0, umbrella: c.umbrella, dying: c.dying > 0, hurt: c.hurtT > 0, backflip: c.backflip > 0 })),
-      objs: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => ({ id: o.id, kind: o.kind, x: o.x, y: o.y, z: o.z, yaw: o.yaw, para: !!o.para, trig: !!o.trig, name: o.name })),
-      cam: this.camera(), water: this.water, phase: this.phase, turn: this.tview(),
+      objs: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => ({ id: o.id, kind: o.kind, x: o.x, y: o.y, z: o.z, yaw: o.yaw, para: !!o.para, trig: !!(o.trig || o.trap), trap: !!o.trap, name: o.name })),
+      cam: this.camera(), water: this.water, wind: [this.wind.x, this.wind.z], phase: this.phase, turn: this.tview(),
     };
   }
 
@@ -1024,7 +1064,7 @@ export class Match {
       clock: Math.ceil(T.clock), retreat: this.phase === 'retreat' ? Math.ceil(T.retreat) : 0, phase: this.phase,
       weapon: T.weapon, fuse: T.fuse, mode: T.mode, fp: !!T.fp, inv: team.inv, walker: !!T.walker, power: T.power, charging: T.charging,
       pitch: Math.round(T.pitch * 1000) / 1000, yaw: ch ? Math.round(ch.yaw * 1000) / 1000 : 0,
-      wind: Math.round(Math.hypot(this.wind.x, this.wind.z) * 10), dd: team.dd, jet: ch && ch.jet > 0, rope: ch && !!ch.rope, umbrella: ch && ch.umbrella,
+      wind: Math.round(Math.hypot(this.wind.x, this.wind.z) * 10), dd: team.dd, visor: !!team.visor, jet: ch && ch.jet > 0, rope: ch && !!ch.rope, umbrella: ch && ch.umbrella,
       canPick: !!T.canPick,
     };
   }

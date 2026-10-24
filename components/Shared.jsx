@@ -210,7 +210,7 @@ export function MatchHud({ turn, matchPhase, wind, camYaw, teams, radar, smallRa
     <div className="hud">
       {showPlay && (
         <div className="turnp">
-          <div className="tb" style={{ '--tc': t.color }}>{t.cpu ? '🤖 ' : ''}{t.teamName}<small>{t.ch}{t.dd ? ' · 💪 Doble daño' : ''}</small></div>
+          <div className="tb" style={{ '--tc': t.color }}>{t.cpu ? '🤖 ' : ''}{t.teamName}<small>{t.ch}{t.dd ? ' · 💪 Doble daño' : ''}{t.visor ? ' · 🔭 Visor' : ''}</small></div>
           <div className={`clock ${t.retreat ? 'ret' : t.clock <= 5 ? 'warn' : ''}`}>{clockVal}</div>
         </div>
       )}

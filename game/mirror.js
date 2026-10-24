@@ -66,9 +66,9 @@ export class MirrorView {
     const prev = new Map(a.o.map((o) => [o[0], o]));
     const objs = b.o.map((o) => {
       const p = prev.get(o[0]) || o;
-      return { id: o[0], kind: o[1], x: lerp(p[2], o[2], t), y: lerp(p[3], o[3], t), z: lerp(p[4], o[4], t), yaw: lerpAng(p[5], o[5], t), para: !!o[6], trig: !!o[7], name: o[8] || '' };
+      return { id: o[0], kind: o[1], x: lerp(p[2], o[2], t), y: lerp(p[3], o[3], t), z: lerp(p[4], o[4], t), yaw: lerpAng(p[5], o[5], t), para: !!o[6], trig: !!o[7], trap: !!(o[7] && String(o[1]).startsWith('caja')), name: o[8] || '' };
     });
-    return { chickens, objs, cam: b.cam, water: lerp(a.water, b.water, t), phase: b.ph, turn: b.tv };
+    return { chickens, objs, cam: b.cam, water: lerp(a.water, b.water, t), wind: b.w || [0, 0], phase: b.ph, turn: b.tv };
   }
 
   frame(dt) {

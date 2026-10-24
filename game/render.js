@@ -1,6 +1,6 @@
 // Motor gráfico 3D con Three.js: isla, agua, cielo, pollitos, objetos, partículas, cámaras y etiquetas
 import * as THREE from 'three';
-import { NX, NY, NZ, VOX, WORLD_X, WORLD_Z, CHICKEN_H, weaponById } from './constants.js';
+import { NX, NY, NZ, VOX, WORLD_X, WORLD_Z, CHICKEN_H, PROJ_GRAVITY, weaponById } from './constants.js';
 import { TerrainMesh } from './mesher.js';
 import { makeChicken, makeObject, PROJ_MODEL } from './models.js';
 
@@ -166,6 +166,9 @@ export class Renderer {
     this.dots = [];
     const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false });
     for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), dotMat); d.visible = false; d.renderOrder = 9; this.scene.add(d); this.dots.push(d); }
+    this.visorDots = [];
+    const vDotMat = new THREE.MeshBasicMaterial({ color: 0x5ff0ff, transparent: true, opacity: 0.92, depthTest: false });
+    for (let i = 0; i < 28; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 4), vDotMat); d.visible = false; d.renderOrder = 9; this.scene.add(d); this.visorDots.push(d); }
     this.cursor = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.12, 6, 24), new THREE.MeshBasicMaterial({ color: 0xff3b3b }));
     ring.rotation.x = Math.PI / 2;
@@ -609,11 +612,18 @@ export class Renderer {
       let it = this.objs.get(o.id);
       if (!it) {
         const kind = PROJ_MODEL[o.kind] || 'egg';
-        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2 }[o.kind] || 1;
+        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2, fuego: 1.8 }[o.kind] || 1;
         const mesh = makeObject(kind, scale);
         this.scene.add(mesh);
         it = { mesh, kind: o.kind };
-        if (o.kind.startsWith('caja')) { it.para = makeObject('sombrilla', 0.85); it.para.position.y = 1.35; mesh.add(it.para); }
+        if (o.kind.startsWith('caja')) {
+          it.para = makeObject('sombrilla', 0.85); it.para.position.y = 1.35; mesh.add(it.para);
+          const tm = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false }));
+          tm.position.set(0.22, 0.62, 0.22);
+          tm.visible = false;
+          mesh.add(tm);
+          it.trapMark = tm;
+        }
         if (o.kind === 'lapida' && o.name) { const l = document.createElement('div'); l.className = 'lbl tomb'; l.textContent = o.name; this.overlay.appendChild(l); it.lbl = l; }
         this.objs.set(o.id, it);
       }
@@ -627,7 +637,23 @@ export class Renderer {
       } else m.rotation.y = o.yaw;
       if (o.kind === 'gallina') m.position.y += Math.abs(Math.sin(this.time * 14)) * 0.12;
       if (o.kind === 'paloma') m.scale.y = 1.4 * (1 + Math.sin(this.time * 20) * 0.3);
+      if (o.kind === 'fuego') {
+        m.scale.y = 1.6 + Math.sin(this.time * 18 + o.id) * 0.35;
+        m.rotation.y += dt * 2.2;
+        if (Math.random() < 0.65) {
+          const a = Math.random() * Math.PI * 2, r = Math.random() * 1.4;
+          this.parts.add({ x: o.x + Math.cos(a) * r, y: o.y + 0.2, z: o.z + Math.sin(a) * r, vx: (Math.random() - 0.5) * 0.8, vy: 2 + Math.random() * 2.2, vz: (Math.random() - 0.5) * 0.8, size: 0.16, color: Math.random() < 0.5 ? '#ff5a1f' : '#ffd23f', life: 0.5, grav: -1, shrink: true });
+        }
+      }
       if (it.para) it.para.visible = !!o.para;
+      if (it.trapMark) {
+        const isTrap = !!(o.trap || (o.trig && o.kind.startsWith('caja')));
+        it.trapMark.visible = isTrap;
+        if (isTrap) {
+          it.trapMark.scale.setScalar(0.85 + Math.sin(this.time * 14 + o.id) * 0.3);
+          m.rotation.z = Math.sin(this.time * 16 + o.id) * 0.055;
+        } else m.rotation.z = 0;
+      }
       if (o.kind === 'mina') m.visible = !o.trig || Math.sin(this.time * 30) > -0.3;
       if (o.kind === 'vela' && Math.random() < 0.5) this.parts.add({ x: o.x, y: o.y + 0.9, z: o.z, vx: (Math.random() - 0.5) * 0.4, vy: 1.2, vz: (Math.random() - 0.5) * 0.4, size: 0.1, color: Math.random() < 0.5 ? '#ffd23f' : '#ff7a1a', life: 0.4, grav: 0, shrink: true });
       if (['bazuca', 'guacamaya'].includes(o.kind) && Math.random() < 0.7) this.parts.add({ x: o.x, y: o.y, z: o.z, vx: 0, vy: 0.4, vz: 0, size: 0.22, color: '#d8d8d8', life: 0.6, grav: -0.5, grow: 1.5, drag: 1 });
@@ -649,8 +675,48 @@ export class Renderer {
       const oz = isFp ? ach.z + dz * 0.25 : ach.z;
       this.xhair.visible = true;
       this.xhair.position.set(ox + dx * 4, oy + dy * 4, oz + dz * 4);
-      this.dots.forEach((d, i) => { d.visible = !isFp && T.mode === 'aim'; d.position.set(ox + dx * (1 + i * 0.5), oy + dy * (1 + i * 0.5), oz + dz * (1 + i * 0.5)); });
-    } else { this.xhair.visible = false; this.dots.forEach((d) => { d.visible = false; }); }
+      this.dots.forEach((d, i) => { d.visible = !isFp && !T.visor && T.mode === 'aim'; d.position.set(ox + dx * (1 + i * 0.5), oy + dy * (1 + i * 0.5), oz + dz * (1 + i * 0.5)); });
+      if (T.visor) {
+        const sx0 = ach.x + dx * 0.6, sy0 = ach.y + 0.75 + dy * 0.6, sz0 = ach.z + dz * 0.6;
+        if (wp.aim === 'power') {
+          const pwr = T.charging ? Math.max(0.08, T.power) : 0.65;
+          const sp = 5 + pwr * 21;
+          let px = sx0, py = sy0, pz = sz0;
+          let vx = dx * sp, vy = dy * sp, vz = dz * sp;
+          const wk = wp.id === 'bazuca' ? 7 : 0;
+          const wx = v.wind ? v.wind[0] : 0, wz = v.wind ? v.wind[1] : 0;
+          const stepDt = 0.065;
+          let hit = false;
+          for (let i = 0; i < this.visorDots.length; i++) {
+            const vd = this.visorDots[i];
+            if (hit) { vd.visible = false; continue; }
+            vy -= PROJ_GRAVITY * stepDt;
+            if (wk) { vx += wx * wk * stepDt; vz += wz * wk * stepDt; }
+            px += vx * stepDt; py += vy * stepDt; pz += vz * stepDt;
+            vd.visible = true;
+            vd.position.set(px, py, pz);
+            if ((this.terrain && this.terrain.solid(px, py, pz)) || py < wy) hit = true;
+          }
+        } else {
+          let hit = false;
+          for (let i = 0; i < this.visorDots.length; i++) {
+            const vd = this.visorDots[i];
+            if (hit) { vd.visible = false; continue; }
+            const dist = 0.8 + i * 0.8;
+            const px = sx0 + dx * dist, py = sy0 + dy * dist, pz = sz0 + dz * dist;
+            vd.visible = true;
+            vd.position.set(px, py, pz);
+            if ((this.terrain && this.terrain.solid(px, py, pz)) || py < wy) hit = true;
+          }
+        }
+      } else {
+        this.visorDots.forEach((d) => { d.visible = false; });
+      }
+    } else {
+      this.xhair.visible = false;
+      this.dots.forEach((d) => { d.visible = false; });
+      this.visorDots.forEach((d) => { d.visible = false; });
+    }
     if (T && T.mode === 'target' && T.cursor && v.phase === 'play') {
       this.cursor.visible = true;
       const cy = this.groundBelow(T.cursor[0], 30, T.cursor[1]);

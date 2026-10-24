@@ -115,5 +115,43 @@ for (const w of WEAPONS) {
   if (!ok) fails++;
   console.log(`${ok ? 'OK ' : 'MAL'} vista en primera persona para bazuca, granada y maíz`);
 }
+
+// 7) cajas trampa, utilidad Visor y fuego de barriles (5 daño/s)
+{
+  const m = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 654, island: 'arenero' });
+  while (m.phase !== 'play') m.update(dt);
+  const ch = m.activeChicken();
+  const team = m.teams[ch.team];
+
+  // utilidad Visor
+  const cu = m.addObj({ kind: 'cajaUtil', x: ch.x, y: ch.y, z: ch.z, ground: true, util: 'visor' });
+  m.pickCrate(ch, cu);
+  const visorOn = team.visor === true && m.tview().visor === true;
+  m.fire(0.5);
+  const visorConsumed = team.visor === false;
+
+  // caja trampa
+  const hp0 = ch.hp;
+  const ct = m.addObj({ kind: 'cajaSalud', x: ch.x, y: ch.y, z: ch.z, ground: true, trap: true });
+  m.pickCrate(ch, ct);
+  const trapBoom = ch.hp < hp0 && ct.dead;
+
+  // barril deja fuego que hace 5 de daño por segundo
+  const target = m.chickens.find((c) => c.alive && c.id !== ch.id);
+  target.x = 32; target.z = 32; target.y = m.terrain.surfaceY(32, 32); target.vx = target.vy = target.vz = 0; target.air = false; target.ground = true;
+  const bar = m.addObj({ kind: 'barril', x: 32, y: target.y, z: 32, hp: 1 });
+  m.explodeObj(bar);
+  const fireObj = m.objs.find((o) => o.kind === 'fuego' && !o.dead);
+  target.x = fireObj.x; target.y = fireObj.y; target.z = fireObj.z; target.vx = target.vy = target.vz = 0; target.air = false; target.ground = true;
+  const hpBeforeFire = target.hp;
+  for (let i = 0; i < 60; i++) {
+    target.x = fireObj.x; target.y = fireObj.y; target.z = fireObj.z;
+    m.stepStatic(fireObj, dt);
+  }
+  const fireDmgOk = fireObj && (hpBeforeFire - target.hp) === 5;
+  const allOk = visorOn && visorConsumed && trapBoom && fireDmgOk;
+  if (!allOk) fails++;
+  console.log(`${allOk ? 'OK ' : 'MAL'} cajas trampa, utilidad Visor y fuego de barril (5 daño/s)`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

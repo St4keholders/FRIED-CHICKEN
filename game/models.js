@@ -277,6 +277,14 @@ const BUILDERS = {
     P(g, 'rbox', '#8d99a6', [0, 0.36, 0.085], [0.05, 0.24, 0.02]);
     P(g, 'rbox', '#8d99a6', [0, 0.4, 0.085], [0.16, 0.05, 0.02]);
   },
+  fuego: (g) => {
+    P(g, 'sphere', '#ff5a1f', [0, 0.06, 0], [0.95, 0.08, 0.95], null, 'glow');
+    const pts = [[0, 0, 0.34, 0.62], [-0.45, 0.2, 0.24, 0.45], [0.45, -0.15, 0.26, 0.5], [0.1, -0.45, 0.22, 0.42], [-0.25, -0.35, 0.2, 0.38], [0.28, 0.38, 0.22, 0.44]];
+    pts.forEach(([x, z, r, h], i) => {
+      P(g, 'cone', i % 2 ? '#ff5a1f' : '#ffb020', [x, h * 0.5, z], [r, h, r], null, 'basic');
+      P(g, 'cone', '#fff275', [x, h * 0.38, z], [r * 0.55, h * 0.65, r * 0.55], null, 'basic');
+    });
+  },
 };
 
 export function makeObject(kind, scale = 1) {
@@ -291,5 +299,5 @@ export function makeObject(kind, scale = 1) {
 export const PROJ_MODEL = {
   bazuca: 'egg', granada: 'granada', maiz: 'maiz', pop: 'pop', oro: 'oro', bomba: 'paloma', regalo: 'bomba',
   guacamaya: 'guacamaya', vela: 'vela', mina: 'mina', gallina: 'gallina', barril: 'barril',
-  cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', lapida: 'lapida',
+  cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', lapida: 'lapida', fuego: 'fuego',
 };

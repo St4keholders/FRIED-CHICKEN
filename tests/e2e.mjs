@@ -132,6 +132,22 @@ const tapFire = async (p, ms = 150) => {
       return { idleLook, flipOk, flapOk, scaredOk, cheerOk };
     });
     check(anims.idleLook && anims.flipOk && anims.flapOk && anims.scaredOk && anims.cheerOk, 'animaciones de pollitos: mirar al del turno, voltereta, aleteo, cara de susto y festejo');
+    const t10 = await t.evaluate(() => {
+      const h = window.__fcHost;
+      const m = h.match;
+      const r = h.renderer;
+      const ch = m.activeChicken();
+      const trapCrate = m.addObj({ kind: 'cajaArma', x: ch.x + 3, y: ch.y, z: ch.z, ground: true, trap: true });
+      const fire = m.addObj({ kind: 'fuego', x: ch.x - 3, y: ch.y, z: ch.z, t: 4, r: 2 });
+      m.teams[m.turn.team].visor = true;
+      r.draw(m.view(), 1 / 60);
+      const trapVis = !!(r.objs.get(trapCrate.id) && r.objs.get(trapCrate.id).trapMark && r.objs.get(trapCrate.id).trapMark.visible);
+      const fireVis = !!(r.objs.get(fire.id) && r.objs.get(fire.id).mesh.visible);
+      const visorCount = r.visorDots.filter((d) => d.visible).length;
+      m.teams[m.turn.team].visor = false;
+      return { trapVis, fireVis, visorCount };
+    });
+    check(t10.trapVis && t10.fireVis && t10.visorCount > 5, 'aviso visual en caja trampa, trayectoria completa con Visor y fuego de barril en 3D');
     await t.evaluate(() => {
       if (window.__fcHost && window.__fcHost.match) {
         window.__fcHost.match.objs = [];
