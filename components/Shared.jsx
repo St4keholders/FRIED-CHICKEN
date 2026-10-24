@@ -107,6 +107,25 @@ export function ConfigPanel({ cfg, onCfg, canEdit, humans = 1, compact = false }
   );
 }
 
+// resumen de solo lectura de los ajustes (para celulares que no son J1)
+export function ConfigSummary({ cfg }) {
+  if (!cfg) return null;
+  const mode = MODES.find((m) => m.id === cfg.mode)?.name || cfg.mode;
+  const teamMode = TEAM_MODES.find((t) => t.id === cfg.teamMode)?.name || cfg.teamMode;
+  const cpuLvl = CPU_LEVELS.find((l) => l.id === cfg.cpuLevel)?.name || 'Normal';
+  const wpnSet = WEAPON_SETS.find((w) => w.id === cfg.weaponSet)?.name || cfg.weaponSet;
+  return (
+    <div className="cfg-summary">
+      <div className="cs-item"><span>Modo</span><b>{mode}</b></div>
+      <div className="cs-item"><span>Isla</span><b>{islandName(cfg.island)}</b></div>
+      <div className="cs-item"><span>Equipos</span><b>{teamMode} ({cfg.chickens} 🐔)</b></div>
+      <div className="cs-item"><span>CPU</span><b>{cfg.cpuTeams} · {cpuLvl}</b></div>
+      <div className="cs-item"><span>Vida</span><b>{cfg.hp} HP</b></div>
+      <div className="cs-item"><span>Reloj</span><b>{cfg.turnTime}s · {wpnSet}</b></div>
+    </div>
+  );
+}
+
 // flecha del viento relativa a la cámara
 export function Wind({ wind, camYaw }) {
   if (!wind) return null;

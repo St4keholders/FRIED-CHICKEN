@@ -67,6 +67,11 @@ input, select { font-family: var(--body); }
 .isl-sw { width: 24px; height: 22px; flex: none; border: 2px solid var(--ink); border-radius: 7px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #fff; font-size: 13px; }
 .isl-sw i { flex: 1; height: 100%; display: block; }
 .isl-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ro-note { background: var(--cream2); border: 2px dashed var(--ink); border-radius: 10px; padding: 4px 8px; font-size: 12px; font-weight: 900; color: var(--ink2); text-align: center; margin-bottom: 4px; }
+.cfg-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 10px; text-align: left; }
+.cs-item { background: #fff; border: 3px solid var(--ink); border-radius: 12px; padding: 5px 8px; display: flex; flex-direction: column; box-shadow: 0 2px 0 var(--ink); }
+.cs-item span { font-size: 11px; font-weight: 800; color: var(--ink2); }
+.cs-item b { font-family: var(--font); font-size: 14px; color: var(--ink); font-weight: 400; }
 .row { display: flex; align-items: center; gap: 10px; }
 .lab { font-family: var(--font); font-size: 14px; color: var(--ink2); margin: 9px 0 4px; letter-spacing: .3px; }
 .sel { width: 100%; border: 3px solid var(--ink); border-radius: 12px; padding: 6px 10px; font-size: 16px; font-weight: 800; background: #fff; color: var(--ink); box-shadow: 0 3px 0 var(--ink); }

@@ -329,7 +329,11 @@ export class GameHost {
       if (code === 'Space' && kbSlot < 0) {
         const free = this.players.findIndex((p) => !p);
         if (free >= 0) { this.players[free] = this.newPlayer(free, 'kb'); this.audio.sfx('join'); this.broadcastLobby(); this.changed(); }
-      } else if (code === 'Enter' || code === 'NumpadEnter') this.startMatch();
+      } else if (code === 'Enter' || code === 'NumpadEnter') {
+        const hs = this.hostSlot();
+        const hp = hs >= 0 ? this.players[hs] : null;
+        if (hp && (hp.kind === 'local' || hp.kind === 'kb')) this.startMatch();
+      }
       return;
     }
     if (this.phase === 'results') { if (code === 'Enter' || code === 'NumpadEnter') this.next('again'); if (code === 'Escape') this.next('lobby'); return; }

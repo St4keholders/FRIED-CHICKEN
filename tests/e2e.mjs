@@ -106,6 +106,10 @@ const tapFire = async (p, ms = 150) => {
   const code = await t.evaluate(() => sessionStorage.getItem('fc_code'));
   const a = await phone(code, 'A');
   const b = await phone(code, 'B');
+  check((await t.locator('.ro-note').innerText()).includes('Los ajustes los elige J1 desde su celular'), 'el TV avisa que J1 elige desde su celular');
+  check(await t.locator('.cfgc .isl-btn:not([disabled])').count() === 0 && await t.locator('.slots .go[disabled]').count() === 1, 'el TV no deja editar ni iniciar si J1 está en celular');
+  check(await b.locator('.isl-btn').count() === 0 && await b.locator('.cfg-summary .cs-item').count() === 6, 'J2 ve resumen de solo lectura y no puede editar ajustes');
+  await b.screenshot({ path: OUT + '3_lobby_j2.png', fullPage: true });
   await a.getByRole('button', { name: 'Cooperativo' }).click(); await sleep(300);
   await a.getByRole('button', { name: 'Equipos compartidos' }).click(); await sleep(300);
   await a.setViewportSize({ width: 860, height: 400 }); await b.setViewportSize({ width: 860, height: 400 });

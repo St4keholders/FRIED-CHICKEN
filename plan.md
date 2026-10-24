@@ -104,7 +104,7 @@ Marca la revisión como hecha cuando hayas leído todos los archivos de `game/` 
   - Muestra el nombre de la isla elegida bien visible en el lobby del TV y en el celular.
   - Prueba: en `tests/e2e.mjs`, elegir isla desde el celular de J1 → el TV la marca, el fondo cambia a esa isla (`host.demo.island`) y la partida empieza ahí.
 
-- [ ] **T2. Solo J1 elige el mapa y los demás ajustes.**
+- [x] **T2. Solo J1 elige el mapa y los demás ajustes.**
   - El servidor ya rechaza los ajustes que no vienen de J1 (`hostSlot`). Falta la interfaz:
   - En el **TV**, los ajustes y el botón "¡A PELEAR!" solo se pueden tocar si J1 está en ese mismo dispositivo (jugador local o de teclado). Si J1 está en un celular, el TV muestra los ajustes **de solo lectura** con el aviso "Los ajustes los elige J1 desde su celular". Si todavía no hay nadie, también son de solo lectura.
   - En los celulares que no son J1, muestra un **resumen de solo lectura** (modo, isla, equipos, CPU, vida, reloj) para que sepan qué se va a jugar.
@@ -193,3 +193,4 @@ node tests/peer-server.mjs          # servidor de conexión local (otra terminal
 | 2026-10-23 | — | Plan creado. Comprobado que la selección de isla sí llega a la configuración y a la partida; el problema visible es el fondo del lobby (ver T1). `tests/sim.mjs` y `tests/e2e.mjs` pasan completos. | Navegador automático (TV + celulares, sin TV, cooperativo, teclado). |
 | 2026-10-23 | T0 | Revisión completa de `game/` y `components/`. Arreglado `tests/e2e.mjs` en Windows (`fileURLToPath` para rutas y `--use-angle=d3d11` para usar GPU en vez de SwiftShader por CPU que colgaba el PC). Detectados detalles menores de UI (`Norma` truncado en dificultad CPU en TV, interpolación de altura en pendientes) para pulir. | `npm run build`, `node tests/sim.mjs` (Todo bien) y `node tests/e2e.mjs` (Todo bien, capturas revisadas en `tests/out/`). |
 | 2026-10-23 | T1 | Cambiado `<select>` de isla por cuadrícula de botones con colores de cada isla y "🎲 Aleatoria". Al elegir isla en el lobby se regenera la partida de muestra del fondo en esa isla (`startDemo(isla)`), y se muestra la isla elegida en etiqueta visible en TV y celular. | `npm run build`, `node tests/sim.mjs` y `node tests/e2e.mjs` (comprobado `host.demo.island === 'billar'`, botón activo en TV y nombre visible). |
+| 2026-10-23 | T2 | En el TV los ajustes y el botón "¡A PELEAR!" quedan de solo lectura salvo que J1 esté en ese dispositivo (teclado o celular anfitrión), mostrando aviso "Los ajustes los elige J1 desde su celular". En celulares que no son J1 se muestra resumen de solo lectura (`ConfigSummary`). | `npm run build`, `node tests/sim.mjs` y `node tests/e2e.mjs` (comprobado que el TV bloquea edición cuando J1 es celular y J2 ve las 6 tarjetas de resumen). |

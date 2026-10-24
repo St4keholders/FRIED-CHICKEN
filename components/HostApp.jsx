@@ -104,6 +104,11 @@ export default function HostApp() {
 function Lobby({ st, h, qr, url, share, msg }) {
   const humans = st.players.filter(Boolean).length;
   const shared = st.cfg.teamMode === 'shared';
+  const j1 = st.hostSlot >= 0 ? st.players[st.hostSlot] : null;
+  const canEdit = !!(j1 && (j1.kind === 'local' || j1.kind === 'kb'));
+  const roNotice = j1 && j1.kind === 'phone'
+    ? 'Los ajustes los elige J1 desde su celular'
+    : !j1 ? 'Únete con tu celular o teclado (J1) para elegir los ajustes' : '';
   return (
     <div className="lobby">
       <div className="logo">FRIED<span className="l2">CHICKEN</span><small>Guerra de pollitos por turnos · conecta tu celular y a pelear</small></div>
@@ -128,11 +133,12 @@ function Lobby({ st, h, qr, url, share, msg }) {
           <h3 style={{ margin: 0 }}>Ajustes de la partida</h3>
           <span className="pill isl-pill">🗺️ {islandName(st.cfg.island)}</span>
         </div>
-        <ConfigPanel cfg={st.cfg} onCfg={(c) => h.setCfg(c)} canEdit humans={humans} />
+        {roNotice && <div className="ro-note">{roNotice}</div>}
+        <ConfigPanel cfg={st.cfg} onCfg={(c) => canEdit && h.setCfg(c)} canEdit={canEdit} humans={humans} />
       </div>
       <div className="slots">
         {[0, 1, 2, 3].map((i) => <SlotCard key={i} i={i} p={st.players[i]} shared={shared && st.cfg.mode === 'versus'} canRemove onRemove={(s) => h.removePlayer(s)} />)}
-        <button className="btn red big go" disabled={!humans} onClick={() => h.startMatch()}>¡A PELEAR!</button>
+        <button className="btn red big go" disabled={!humans || !canEdit} onClick={() => canEdit && h.startMatch()}>¡A PELEAR!</button>
       </div>
     </div>
   );

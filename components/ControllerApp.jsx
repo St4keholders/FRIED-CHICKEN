@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, islandName, weaponById } from '../game/constants';
 import { peerOptionsFromURL } from '../game/peeropts';
 import { Audio } from '../game/audio';
-import { ConfigPanel, TeamBars, Results, MyChicken } from './Shared';
+import { ConfigPanel, ConfigSummary, TeamBars, Results, MyChicken } from './Shared';
 import { TurnPad } from './TouchControls';
 
 function getPid() {
@@ -236,8 +236,8 @@ export default function ControllerApp() {
             ) : (
               <div className="card" style={{ textAlign: 'center' }}>
                 <h3 style={{ margin: 0 }}>Esperando a que J1 empiece…</h3>
-                <div style={{ marginTop: 6 }}><span className="pill isl-pill">🗺️ Isla: {islandName(lobby.cfg.island)}</span></div>
-                <div className="small" style={{ marginTop: 6 }}>{lobby.players.filter(Boolean).length} jugador(es) en la sala</div>
+                <div className="small" style={{ marginTop: 4 }}>{lobby.players.filter(Boolean).length} jugador(es) en la sala · Solo J1 cambia los ajustes</div>
+                <ConfigSummary cfg={lobby.cfg} />
                 <button className="btn white sm" style={{ marginTop: 10 }} onClick={() => { initAudio(); goFullscreen(); }}>Pantalla completa</button>
               </div>
             )}
