@@ -7,6 +7,7 @@ import { ISLAND_IDS } from '../game/islands.js';
 import { M } from '../game/terrain.js';
 import { LEVELS, GOALS, SPEAKER_IDS, levelById, isValidLevel, storyTeams, storyCfg } from '../game/story.js';
 import { buildCinematic, beatCamera, focusPoint, Cinema, CAM_STYLES } from '../game/cinema.js';
+import { makeObject } from '../game/models.js';
 import { ISLANDS } from '../game/constants.js';
 
 const dt = 1 / 60;
@@ -351,6 +352,61 @@ function winStory(n, tries = 4) {
   const allOk = l1Ok && l2Ok && l4Ok && l7Ok && winOk;
   if (!allOk) fails++;
   console.log(`${allOk ? 'OK ' : 'MAL'} historia niveles 1, 2, 4 y 7 (pistas ${l1Ok}, agua ${l2Ok}, abuela ${l4Ok}, oleadas ${l7Ok}, partidas ${wins.map((w) => `N${w.n}:${w.m.over && w.m.over.win ? 'gana' : 'no'}/${w.tries}`).join(' ')})`);
+}
+
+// 11) niveles 3 y 5: Huevitos (cajaHuevo) y máquinas de lata (maquinaLata) con modelos 3D
+{
+  // Modelos 3D
+  const meshHuevo = makeObject('cajaHuevo');
+  const meshMach = makeObject('maquinaLata');
+  const modelsOk = !!meshHuevo && meshHuevo.children.length >= 3 && !!meshMach && meshMach.children.length >= 5;
+
+  // Nivel 3: Cocina Gigante - 3 Huevitos en 8 rondas
+  const s3 = storyMatch(3, 31, null);
+  const eggs0 = s3.m.objs.filter((o) => o.kind === 'cajaHuevo' && !o.dead);
+  const ch3 = s3.m.chickens[0];
+  // recoger el primer huevito
+  s3.m.pickCrate(ch3, eggs0[0]);
+  const eggs1 = s3.m.story.eggs;
+  // recoger el segundo y tercer huevito
+  s3.m.pickCrate(ch3, eggs0[1]);
+  s3.m.pickCrate(ch3, eggs0[2]);
+  const l3Win = s3.m.story.eggs === 3 && s3.m.phase === 'over' && s3.m.over.win === true;
+
+  // derrota en nivel 3 al terminar 8 rondas sin recoger todos los huevitos
+  const s3Fail = storyMatch(3, 32, null);
+  for (let r = 0; r < 8; r++) s3Fail.m.storyRound(0);
+  const l3Lost = s3Fail.m.storyRound(0) === true && s3Fail.m.phase === 'over' && s3Fail.m.over.win === false;
+  const l3Ok = eggs0.length === 3 && eggs1 === 1 && l3Win && l3Lost;
+
+  // Nivel 5: Mesa de Billar - destruir 4 máquinas de lata con munición limitada
+  const s5 = storyMatch(5, 51, null);
+  const machs0 = s5.m.objs.filter((o) => o.kind === 'maquinaLata' && !o.dead);
+  const heroTeam = s5.m.teams[0];
+  const ammoLimited = heroTeam.inv.bazuca === 12 && heroTeam.inv.granada === 8 && heroTeam.inv.oro === 1;
+
+  // Dañar una máquina con explosión
+  const m0 = machs0[0];
+  const hp0 = m0.hp;
+  s5.m.explode(m0.x, m0.y, m0.z, 2.5, 30, heroTeam.idx);
+  const mDamaged = m0.hp < hp0;
+
+  // Destruir las 4 máquinas
+  for (const m of machs0) {
+    if (!m.dead) s5.m.explode(m.x, m.y, m.z, 5.0, 100, heroTeam.idx);
+  }
+  const l5Win = machs0.every((m) => m.dead) && s5.m.phase === 'over' && s5.m.over.win === true;
+
+  // Derrota en nivel 5 si se acaba la munición y quedan máquinas vivas
+  const s5Fail = storyMatch(5, 52, null);
+  const failTeam = s5Fail.m.teams[0];
+  for (const k of Object.keys(failTeam.inv)) failTeam.inv[k] = 0;
+  const l5Lost = s5Fail.m.storyOutOfAmmo() === true && s5Fail.m.storyCheck() === false;
+  const l5Ok = machs0.length === 4 && ammoLimited && mDamaged && l5Win && l5Lost;
+
+  const t12bOk = modelsOk && l3Ok && l5Ok;
+  if (!t12bOk) fails++;
+  console.log(`${t12bOk ? 'OK ' : 'MAL'} historia niveles 3 y 5 (modelos 3D ${modelsOk}, huevitos nivel 3 ${l3Ok}, máquinas nivel 5 ${l5Ok})`);
 }
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

@@ -14,7 +14,7 @@ const BOOM = {
   oro: { r: 4.4, d: 100 }, regalo: { r: 1.7, d: 30 }, guacamaya: { r: 2.2, d: 55 }, vela: { r: 2.6, d: 70 },
   mina: { r: 2.0, d: 45 }, gallina: { r: 3.0, d: 75 }, barril: { r: 2.6, d: 45 },
   cajaArma: { r: 2.0, d: 30 }, cajaSalud: { r: 2.0, d: 30 }, cajaUtil: { r: 2.0, d: 30 },
-  escopeta: { r: 0.9, d: 25 }, muerte: { r: 1.3, d: 15 },
+  escopeta: { r: 0.9, d: 25 }, muerte: { r: 1.3, d: 15 }, maquinaLata: { r: 2.5, d: 35 },
 };
 const WIND_K = { bazuca: 7, regalo: 7, pop: 2 };
 const BOUNCE = { granada: 0.45, maiz: 0.45, pop: 0.4, oro: 0.25 };
@@ -85,6 +85,22 @@ export class Match {
     for (let b = 0; b < 3 && n < sp.length; b++) this.addObj({ kind: 'mina', x: sp[n].x, y: sp[n].y, z: sp[n++].z, armed: 1, t: 0 });
     if (this.island === 'billar') {
       for (let b = 0; b < 5 && n < sp.length; b++) this.addObj({ kind: 'bolaBillar', x: sp[n].x, y: sp[n].y, z: sp[n++].z });
+    }
+    if (this.story && this.story.level.goal === 'eggs') {
+      const count = (this.story.level.eggs && this.story.level.eggs.total) || 3;
+      const eggSpots = this.terrain.spawnPoints(count, Math.floor(this.r() * 1e9));
+      for (let i = 0; i < count; i++) {
+        const p = eggSpots[i] || sp[n++] || { x: WORLD_X / 2 + (i - 1) * 8, y: 15, z: WORLD_Z / 2 };
+        this.addObj({ kind: 'cajaHuevo', x: p.x, y: p.y + 0.2, z: p.z, ground: true });
+      }
+    }
+    if (this.story && this.story.level.goal === 'machines') {
+      const count = (this.story.level.machines && this.story.level.machines.count) || 4;
+      const machSpots = this.terrain.spawnPoints(count, Math.floor(this.r() * 1e9));
+      for (let i = 0; i < count; i++) {
+        const p = machSpots[i] || sp[n++] || { x: WORLD_X / 2 + (i - 1.5) * 8, y: 15, z: WORLD_Z / 2 };
+        this.addObj({ kind: 'maquinaLata', x: p.x, y: p.y + 0.2, z: p.z, ground: true, hp: this.story.level.machines.hp || 60, maxHp: this.story.level.machines.hp || 60 });
+      }
     }
     this.teamOrder = this.teams.map((t) => t.idx);
     this.turnTeam = -1;
@@ -495,6 +511,16 @@ export class Match {
       else this.knock(c, fx * 2, 13, fz * 2);
       this.damage(c, 30 * dd, team);
     }
+    for (const o of this.objs) {
+      if (o.dead || o.kind !== 'maquinaLata') continue;
+      const dx = o.x - ch.x, dz = o.z - ch.z, dy = o.y - ch.y;
+      const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+      if (along < -0.2 || along > reach + 0.4 || side > 1.1 || Math.abs(dy) > 1.6) continue;
+      any = true;
+      o.hp = Math.max(0, (o.hp || 60) - 30 * dd);
+      this.emit({ k: 'dmg', id: o.id, n: 30 * dd, x: o.x, y: o.y + 1.2, z: o.z });
+      if (o.hp <= 0) this.explodeObj(o);
+    }
     if (kind === 'picotazo') { ch.vy = 9; ch.air = true; ch.ground = false; ch.peakY = ch.y; this.emit({ k: 'sfx', s: 'fire' }); }
     else this.emit({ k: 'sfx', s: any ? 'chancla' : 'whoosh' });
     if (kind === 'chancla') this.say(ch, 'chancla', any ? '¡Venga para acá, mijo!' : '¡Ay, fallé!');
@@ -553,6 +579,15 @@ export class Match {
       const d = Math.hypot(o.x - x, o.y + 0.3 - y, o.z - z);
       if (d > RR) continue;
       if (o.kind === 'barril' || o.kind === 'cajaArma' || (o.kind === 'mina' && !o.proj)) { if (!o.fuseBoom) o.fuseBoom = 0.12 + this.r() * 0.15; }
+      else if (o.kind === 'maquinaLata') {
+        const f = 1 - d / RR;
+        const amount = Math.round(dmg * (0.45 + 0.55 * f));
+        if (amount > 0) {
+          o.hp = Math.max(0, (o.hp || 60) - amount);
+          this.emit({ k: 'dmg', id: o.id, n: amount, x: o.x, y: o.y + 1.2, z: o.z });
+          if (o.hp <= 0 && !o.dead) this.explodeObj(o);
+        }
+      }
       else if (o.kind === 'bolaBillar') {
         const f = 1 - d / RR, n = d > 0.01 ? 1 / d : 0;
         const push = (12 + dmg * 0.1) * f;
@@ -579,6 +614,10 @@ export class Match {
     if (o.kind === 'barril') {
       const fy = Math.max(this.water + 0.05, this.terrain.surfaceY(o.x, o.z, o.y + 2));
       if (fy > this.water) this.addObj({ kind: 'fuego', x: o.x, y: fy, z: o.z, owner: o.owner, t: 5.0, r: 2.0 });
+    }
+    if (o.kind === 'maquinaLata') {
+      this.emit({ k: 'feathers', x: o.x, y: o.y + 0.8, z: o.z, color: '#9aa7b4' });
+      this.checkOver();
     }
     if (o.kind === 'oro') this.emit({ k: 'sfx', s: 'oroBoom' });
     if (o.kind === 'gallina') this.emit({ k: 'feathers', x: o.x, y: o.y + 0.8, z: o.z });
@@ -1031,7 +1070,7 @@ export class Match {
 
   stepStatic(o, dt) {
     // gravedad y piso (cajas con sombrilla caen despacio)
-    const r = o.kind === 'mina' ? 0.25 : o.kind === 'bolaBillar' ? 0.38 : 0.3;
+    const r = o.kind === 'mina' ? 0.25 : o.kind === 'bolaBillar' ? 0.38 : o.kind === 'maquinaLata' ? 0.45 : 0.3;
     if (!o.ground || !this.onGround(o, r)) {
       o.ground = false;
       o.vy -= GRAVITY * dt;
@@ -1091,6 +1130,7 @@ export class Match {
     if (o.y < this.water - 0.2) {
       o.dead = true;
       this.emit({ k: 'splash', x: o.x, y: this.water, z: o.z, small: true });
+      if (o.kind === 'maquinaLata') this.checkOver();
       return;
     }
     if (o.kind === 'vela') {
@@ -1129,6 +1169,14 @@ export class Match {
   }
 
   pickCrate(ch, o) {
+    if (o.kind === 'cajaHuevo') {
+      o.dead = true;
+      if (this.story) this.story.eggs++;
+      this.emit({ k: 'pickup', id: ch.id, text: '¡Huevito de Oro!', icon: '🥚', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      this.emit({ k: 'sfx', s: 'aleluya' });
+      this.checkOver();
+      return;
+    }
     if (o.trap) {
       this.emit({ k: 'pickup', id: ch.id, text: '¡Caja trampa!', icon: '💣', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
       this.explodeObj(o);

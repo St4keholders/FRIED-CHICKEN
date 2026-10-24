@@ -612,11 +612,11 @@ export class Renderer {
       let it = this.objs.get(o.id);
       if (!it) {
         const kind = PROJ_MODEL[o.kind] || 'egg';
-        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2, fuego: 1.8 }[o.kind] || 1;
+        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, cajaHuevo: 1.25, maquinaLata: 1.35, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2, fuego: 1.8 }[o.kind] || 1;
         const mesh = makeObject(kind, scale);
         this.scene.add(mesh);
         it = { mesh, kind: o.kind };
-        if (o.kind.startsWith('caja')) {
+        if (o.kind.startsWith('caja') && o.kind !== 'cajaHuevo') {
           it.para = makeObject('sombrilla', 0.85); it.para.position.y = 1.35; mesh.add(it.para);
           const tm = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false }));
           tm.position.set(0.22, 0.62, 0.22);
@@ -642,6 +642,13 @@ export class Renderer {
         if (d > 0.002) m.rotation.x += d / 0.38;
       } else m.rotation.y = o.yaw;
       if (o.kind === 'gallina') m.position.y += Math.abs(Math.sin(this.time * 14)) * 0.12;
+      if (o.kind === 'cajaHuevo') {
+        m.position.y += Math.sin(this.time * 3.5 + o.id) * 0.05;
+        if (Math.random() < 0.25) this.parts.add({ x: o.x + (Math.random() - 0.5) * 0.5, y: o.y + 0.6, z: o.z + (Math.random() - 0.5) * 0.5, vx: 0, vy: 0.7, vz: 0, size: 0.08, color: '#ffe066', life: 0.4, grav: -0.2 });
+      }
+      if (o.kind === 'maquinaLata' && Math.random() < 0.35) {
+        this.parts.add({ x: o.x + 0.24, y: o.y + 1.25, z: o.z - 0.2, vx: (Math.random() - 0.5) * 0.12, vy: 1.1, vz: (Math.random() - 0.5) * 0.12, size: 0.15, color: '#8d99a6', life: 0.6, grav: -0.3, grow: 1.8 });
+      }
       if (o.kind === 'paloma') m.scale.y = 1.4 * (1 + Math.sin(this.time * 20) * 0.3);
       if (o.kind === 'fuego') {
         m.scale.y = 1.6 + Math.sin(this.time * 18 + o.id) * 0.35;

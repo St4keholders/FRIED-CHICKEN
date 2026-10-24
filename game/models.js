@@ -291,6 +291,25 @@ const BUILDERS = {
     P(g, 'sphere', '#ffffff', [0, 0.38, 0.36], [0.13, 0.13, 0.04]);
     P(g, 'sphere', '#111111', [0, 0.38, 0.39], [0.05, 0.08, 0.02]);
   },
+  cajaHuevo: (g) => {
+    // Pedestal de terciopelo con cinta dorada y huevito dorado resplandeciente
+    P(g, 'rbox', '#8a1c24', [0, 0.16, 0], [0.62, 0.32, 0.62]);
+    P(g, 'rbox', '#ffd23f', [0, 0.16, 0], [0.65, 0.08, 0.65], null, 'metal');
+    P(g, 'sphere', '#ffe066', [0, 0.52, 0], [0.24, 0.34, 0.24], null, 'glow');
+    for (const [x, z] of [[-0.24, -0.24], [0.24, -0.24], [-0.24, 0.24], [0.24, 0.24]]) {
+      P(g, 'sphere', '#ffffff', [x, 0.33, z], 0.04);
+    }
+  },
+  maquinaLata: (g) => {
+    // Máquina de hojalata del zorro: chasis metálico, chimenea con humo y compuerta
+    P(g, 'rbox', '#4a5568', [0, 0.1, 0], [0.92, 0.2, 0.92], null, 'metal');
+    P(g, 'rbox', '#9aa7b4', [0, 0.52, 0], [0.84, 0.82, 0.84], null, 'metal');
+    P(g, 'cyl', '#4a5568', [0.24, 1.05, -0.2], [0.11, 0.42, 0.11], null, 'metal');
+    P(g, 'sphere', '#ff2b3a', [-0.22, 0.98, 0.2], 0.11, null, 'glow');
+    P(g, 'cyl', '#ffd23f', [0, 0.58, 0.43], [0.2, 0.08, 0.2], [Math.PI / 2, 0, 0], 'metal');
+    P(g, 'rbox', '#1a202c', [0, 0.26, 0.43], [0.36, 0.2, 0.08]);
+    P(g, 'rbox', '#ff9f1a', [0, 0.82, 0.43], [0.5, 0.09, 0.04]);
+  },
 };
 
 export function makeObject(kind, scale = 1) {
@@ -305,6 +324,6 @@ export function makeObject(kind, scale = 1) {
 export const PROJ_MODEL = {
   bazuca: 'egg', granada: 'granada', maiz: 'maiz', pop: 'pop', oro: 'oro', bomba: 'paloma', regalo: 'bomba',
   guacamaya: 'guacamaya', vela: 'vela', mina: 'mina', gallina: 'gallina', barril: 'barril',
-  cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', lapida: 'lapida', fuego: 'fuego',
-  bolaBillar: 'bolaBillar',
+  cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', cajaHuevo: 'cajaHuevo', maquinaLata: 'maquinaLata',
+  lapida: 'lapida', fuego: 'fuego', bolaBillar: 'bolaBillar',
 };

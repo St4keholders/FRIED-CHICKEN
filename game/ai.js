@@ -37,7 +37,14 @@ export class CpuBrain {
   enemies() {
     const me = this.me();
     const al = this.m.alliance(me.team);
-    return this.m.chickens.filter((c) => c.alive && this.m.alliance(c.team) !== al);
+    const foes = this.m.chickens.filter((c) => c.alive && this.m.alliance(c.team) !== al && !c.npc);
+    if (this.m.story && this.m.story.level.goal === 'machines' && al === 'H') {
+      const machs = this.m.objs.filter((o) => o.kind === 'maquinaLata' && !o.dead).map((o) => ({
+        id: -o.id, x: o.x, y: o.y, z: o.z, hp: o.hp || 60, alive: true, team: -1,
+      }));
+      return machs.length ? machs : foes;
+    }
+    return foes;
   }
 
   // daño que haría una explosión en (x, y, z)
@@ -56,6 +63,15 @@ export class CpuBrain {
       if (c === me) s -= dmg * 2.2;
       else if (this.m.alliance(c.team) === al) s -= dmg * 1.6;
       else s += Math.min(dmg, c.hp) * nearWater + (dmg >= c.hp ? 40 : 0);
+    }
+    if (this.m.story && this.m.story.level.goal === 'machines' && al === 'H') {
+      for (const o of this.m.objs) {
+        if (o.dead || o.kind !== 'maquinaLata') continue;
+        const d = Math.hypot(o.x - x, o.y + 0.4 - y, o.z - z);
+        if (d > RR) continue;
+        const dmg = b.d * mult * (0.45 + 0.55 * (1 - d / RR));
+        s += Math.min(dmg, o.hp || 60) * 1.6 + (dmg >= (o.hp || 60) ? 70 : 0);
+      }
     }
     return s;
   }
