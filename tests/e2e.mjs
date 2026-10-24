@@ -358,6 +358,18 @@ const tapFire = async (p, ms = 150) => {
   check((await t.locator('.story-goal-card').innerText()).includes('Aprender a pelear'), 'el objetivo describe el nivel actual');
   await t.screenshot({ path: OUT + '5_historia_hud.png' });
 
+  // Iniciar turno en el nivel de historia y disparar
+  let readyTurn = false;
+  for (let i = 0; i < 20; i++) {
+    if (await t.locator('.turnp').count() && await t.locator('.wpn').count()) { readyTurn = true; break; }
+    await sleep(500);
+  }
+  check(readyTurn, 'inicia el turno de combate en el nivel de historia');
+  check(await t.locator('.story-hint-card').count() === 1 || await a.locator('.story-goal-card').count() === 1, 'el nivel 1 muestra pistas tutoriales y objetivo sincronizado');
+  await t.keyboard.down('Space'); await sleep(500); await t.keyboard.up('Space');
+  await sleep(2000);
+  await t.screenshot({ path: OUT + '5_historia_jugando.png' });
+
   await t.close(); await a.close();
 }
 

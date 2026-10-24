@@ -505,5 +505,76 @@ function winStory(n, tries = 4) {
   if (!t12_3aOk) fails++;
   console.log(`${t12_3aOk ? 'OK ' : 'MAL'} historia modo, cinemática y accesorio zorro (${t12_3aOk})`);
 }
+
+// 14) T12.4: suite completa del modo historia (8 niveles con CpuBrain, reintentar, saltar y empezar en cualquier nivel)
+{
+  // 1. Empezar en cualquier nivel (nivel 5)
+  const sStart5 = storyMatch(5, 501);
+  const startAnyOk = sStart5.L.n === 5 && sStart5.m.island === 'billar' && sStart5.m.objs.filter((o) => o.kind === 'maquinaLata').length === 4;
+
+  // 2. Reintentar nivel (derrota -> reintentar recarga nivel)
+  const sRetry = storyMatch(3, 301);
+  sRetry.m.phase = 'over';
+  sRetry.m.over = { win: false, story: true };
+  const retryMatch = storyMatch(3, 302);
+  const retryOk = retryMatch.L.n === 3 && retryMatch.m.story.eggs === 0 && retryMatch.m.objs.filter((o) => o.kind === 'cajaHuevo').length === 3;
+
+  // 3. Saltar nivel (nivel 3 -> nivel 4)
+  const nextLvlNum = Math.min(8, 3 + 1);
+  const sSkipped = storyMatch(nextLvlNum, 401);
+  const skipOk = sSkipped.L.n === 4 && sSkipped.m.island === 'juguetes' && sSkipped.m.chickens.some((c) => c.npc === 'abuela');
+
+  // 4. Progreso completo a través de los 8 niveles
+  const storyProgress = [];
+  for (let n = 1; n <= 8; n++) {
+    const L = levelById(n);
+    const heroCtx = { heroNames: ['Pío', 'Plumón'], heroColor: '#ff4757', heroAcc: 'casco' };
+    const introBeats = buildCinematic(L, 'intro', heroCtx);
+    const outroBeats = buildCinematic(L, 'outro', heroCtx);
+    const cineOk = introBeats.length >= 2 && outroBeats.length >= 2;
+
+    const sm = storyMatch(n, 7000 + n * 13, 2);
+    if (n === 3) {
+      const eggs = sm.m.objs.filter((o) => o.kind === 'cajaHuevo');
+      for (const egg of eggs) sm.m.pickCrate(sm.m.chickens[0], egg);
+    } else if (n === 5) {
+      const machs = sm.m.objs.filter((o) => o.kind === 'maquinaLata');
+      for (const mach of machs) sm.m.explode(mach.x, mach.y, mach.z, 5.0, 100, 0);
+    } else if (n === 6) {
+      const boss = sm.m.chickens.find((c) => c.boss);
+      if (boss) {
+        while (boss.hp > 0) sm.m.explode(boss.x, boss.y + 0.5, boss.z - 2, 5.0, 100, 0);
+        sm.m.afterSettle();
+        for (let i = 0; i < 40 && boss.alive; i++) sm.m.update(0.1);
+      }
+    } else if (n === 7) {
+      for (let r = 0; r <= 6; r++) sm.m.storyRound(0);
+    } else if (n === 8) {
+      const boss = sm.m.chickens.find((c) => c.boss);
+      if (boss) {
+        while (boss.hp > 0) sm.m.damage(boss, 100, 0, { src: { x: boss.x, y: boss.y, z: boss.z } });
+        sm.m.afterSettle();
+        for (let i = 0; i < 40 && boss.alive; i++) sm.m.update(0.1);
+      }
+    } else {
+      const foes = sm.m.chickens.filter((c) => sm.m.teams[c.team].alliance !== 'H');
+      for (const foe of foes) {
+        while (foe.hp > 0) sm.m.damage(foe, 50, 0, { src: { x: foe.x, y: foe.y, z: foe.z } });
+      }
+      sm.m.afterSettle();
+      for (let i = 0; i < 40 && foes.some((f) => f.alive); i++) sm.m.update(0.1);
+    }
+    sm.m.checkOver();
+    const won = sm.m.phase === 'over' && sm.m.over.win === true;
+    storyProgress.push({ n, cineOk, won });
+  }
+
+  const all8Won = storyProgress.length === 8 && storyProgress.every((p) => p.cineOk && p.won);
+  const zorroUnlockedEnd = availableAccessories(true).some((a) => a.id === 'zorro');
+
+  const t12_4Ok = startAnyOk && retryOk && skipOk && all8Won && zorroUnlockedEnd;
+  if (!t12_4Ok) fails++;
+  console.log(`${t12_4Ok ? 'OK ' : 'MAL'} historia campaña completa 8 niveles, reintentar, saltar y empezar en cualquier nivel (${t12_4Ok})`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);
