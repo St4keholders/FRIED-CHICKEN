@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { chickenPortrait } from '../game/render';
-import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, weaponById } from '../game/constants';
+import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, weaponById } from '../game/constants';
 
 function Seg({ value, options, onChange, disabled }) {
   return (
@@ -85,14 +85,20 @@ export function ConfigPanel({ cfg, onCfg, canEdit, humans = 1, compact = false }
           <Seg value={cfg.weaponSet} options={WEAPON_SETS} onChange={set('weaponSet')} disabled={!canEdit} />
         </div>
       </div>
+      <div className="row" style={{ gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div className="lab">Pollito del turno</div>
+          <Seg value={cfg.pickChicken || 'auto'} options={PICK_CHICKEN_OPTIONS} onChange={set('pickChicken')} disabled={!canEdit} />
+        </div>
+        {!compact && (
+          <div style={{ flex: 1 }}>
+            <div className="lab">Muerte súbita</div>
+            <Seg value={cfg.sudden} options={SUDDEN_OPTIONS.map((n) => ({ id: n, name: `${n} min` }))} onChange={set('sudden')} disabled={!canEdit} />
+          </div>
+        )}
+      </div>
       {!compact && (
         <>
-          <div className="row" style={{ gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div className="lab">Muerte súbita</div>
-              <Seg value={cfg.sudden} options={SUDDEN_OPTIONS.map((n) => ({ id: n, name: `${n} min` }))} onChange={set('sudden')} disabled={!canEdit} />
-            </div>
-          </div>
           {coop && (
             <>
               <div className="lab">Fuego amigo entre aliados</div>
@@ -160,7 +166,7 @@ export function TeamBars({ teams, current, className = 'teamsb' }) {
 }
 
 // HUD compartido entre el TV y el modo PC de /mando
-export function MatchHud({ turn, matchPhase, wind, camYaw, teams, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, children }) {
+export function MatchHud({ turn, matchPhase, wind, camYaw, teams, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, onPickChicken, children }) {
   const t = turn;
   const w = t ? weaponById(t.weapon) : null;
   const n = t && t.inv ? t.inv[t.weapon] : -1;
@@ -172,6 +178,13 @@ export function MatchHud({ turn, matchPhase, wind, camYaw, teams, sudden, sudden
         <div className="turnp">
           <div className="tb" style={{ '--tc': t.color }}>{t.cpu ? '🤖 ' : ''}{t.teamName}<small>{t.ch}{t.dd ? ' · 💪 Doble daño' : ''}</small></div>
           <div className={`clock ${t.retreat ? 'ret' : t.clock <= 5 ? 'warn' : ''}`}>{clockVal}</div>
+        </div>
+      )}
+      {showPlay && t.canPick && onPickChicken && (
+        <div className="pickbar">
+          <button type="button" className="pick-prev" onClick={() => onPickChicken(-1)}>◀</button>
+          <span>🐔 Elegir: <b>{t.ch}</b> (Tab)</span>
+          <button type="button" className="pick-next" onClick={() => onPickChicken(1)}>▶</button>
         </div>
       )}
       <Wind wind={wind} camYaw={camYaw} />

@@ -163,6 +163,7 @@ function Hud({ st, h }) {
       kbTurn={st.kbTurn}
       hideWeapon={!!st.localTurn}
       onOpenWeapons={st.kbTurn && showPlay ? () => setKbGrid(true) : null}
+      onPickChicken={st.kbTurn && showPlay && t && t.canPick ? (d) => h.kbAct({ t: 'pickch', d }) : null}
     >
       {st.localTurn && showPlay && (
         <TurnPad info={t} inv={t.inv} onInput={(i) => h.setLocalIn(i)} onAct={(a) => h.localAct(a)} onAim={({ dyaw, dpitch }) => h.localAim(dyaw, dpitch)} />

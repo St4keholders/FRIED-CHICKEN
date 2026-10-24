@@ -62,5 +62,25 @@ for (const w of WEAPONS) {
   if (!ok1 || !ok2 || !ok3) fails++;
   console.log(`${ok1 && ok2 && ok3 ? 'OK ' : 'MAL'} aimDelta y límites de inclinación`);
 }
+
+// 4) elegir con qué pollito jugar al inicio del turno
+{
+  const m = new Match({ cfg: { ...DEFAULT_CFG, pickChicken: 'choose' }, teams: mkTeams(null), seed: 456, island: 'arenero' });
+  while (m.phase !== 'play') m.update(dt);
+  const c0 = m.turn.ch;
+  const okStart = m.turn.canPick === true;
+  m.act({ t: 'pickch', d: 1 });
+  const c1 = m.turn.ch;
+  const okSwitch = c1 !== c0;
+  m.act({ t: 'pickch', d: -1 });
+  const okBack = m.turn.ch === c0;
+  m.jump(m.activeChicken(), false);
+  const okLocked = m.turn.canPick === false;
+  m.act({ t: 'pickch', d: 1 });
+  const okNoSwitchAfter = m.turn.ch === c0;
+  const allOk = okStart && okSwitch && okBack && okLocked && okNoSwitchAfter;
+  if (!allOk) fails++;
+  console.log(`${allOk ? 'OK ' : 'MAL'} elegir pollito del turno (pickChicken=choose)`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

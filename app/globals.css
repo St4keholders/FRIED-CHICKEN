@@ -146,6 +146,9 @@ input, select { font-family: var(--body); }
 @keyframes bannerIn { from { transform: translate(-50%, -50%) scale(.3); opacity: 0; } }
 .keys { bottom: 14px; left: 16px; font-size: 12px; font-weight: 800; padding: 8px 12px; max-width: 260px; line-height: 1.5; }
 .sudden { top: 92px; left: 16px; font-size: 13px; }
+.pickbar { top: 90px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 8px; background: var(--cream); border: 3px solid var(--ink); border-radius: 16px; padding: 4px 10px; box-shadow: 0 3px 0 var(--ink); font-family: var(--font); font-size: 15px; pointer-events: auto; z-index: 16; white-space: nowrap; }
+.pickbar button { width: 32px; height: 32px; border: 3px solid var(--ink); border-radius: 10px; background: var(--yellow); color: var(--ink); font-size: 14px; padding: 0; box-shadow: 0 2px 0 var(--ink); }
+.pad .pickbar { position: absolute; top: 98px; }
 .fuse { top: 126px; right: 16px; }
 .cpu-think { top: 92px; left: 50%; transform: translateX(-50%); }
 

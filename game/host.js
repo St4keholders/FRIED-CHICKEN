@@ -2,7 +2,7 @@
 import {
   PEER_PREFIX, CODE_CHARS, MAX_PLAYERS, TEAM_COLORS, TEAM_NAMES, CPU_TEAM_NAMES, CHICKEN_NAMES, ROBOT_NAMES,
   ACCESSORIES, DEFAULT_CFG, ISLANDS, RANDOM_ISLAND, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS,
-  CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS, sensRad,
+  CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS, sensRad,
 } from './constants.js';
 import { Match } from './match.js';
 import { CpuBrain } from './ai.js';
@@ -261,6 +261,7 @@ export class GameHost {
       this.startDemo(cfg.island === RANDOM_ISLAND ? null : cfg.island);
     }
     if (SUDDEN_OPTIONS.includes(c.sudden)) cfg.sudden = c.sudden;
+    if (PICK_CHICKEN_OPTIONS.some((o) => o.id === c.pickChicken)) cfg.pickChicken = c.pickChicken;
     if (Number.isInteger(c.cpuTeams) && c.cpuTeams >= 0 && c.cpuTeams <= 3) cfg.cpuTeams = c.cpuTeams;
     if (CPU_LEVELS.some((l) => l.id === c.cpuLevel)) cfg.cpuLevel = c.cpuLevel;
     if (typeof c.friendly === 'boolean') cfg.friendly = c.friendly;
@@ -322,7 +323,7 @@ export class GameHost {
   playerAct(slot, a) {
     const m = this.match;
     if (!m || this.paused || !m.turn || m.turn.cpu || m.turn.slot !== slot) return;
-    if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'surrender'].includes(a.t)) m.act(a);
+    if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'surrender', 'pickch'].includes(a.t)) m.act(a);
   }
 
   playerAim(slot, dyaw, dpitch) {
@@ -381,6 +382,7 @@ export class GameHost {
     else if (has('back')) m.act({ t: 'back' });
     else if (has('aim')) m.act({ t: 'aim' });
     else if (has('view')) m.act({ t: 'view' });
+    else if (code === 'Tab' && m.turn.canPick) m.act({ t: 'pickch', d: e.shiftKey ? -1 : 1 });
     else if (has('next') || has('prev')) this.cycleWeapon(has('next') ? 1 : -1);
     else if (/^Digit[1-5]$/.test(code)) m.act({ t: 'fuse', v: +code.slice(5) });
   }

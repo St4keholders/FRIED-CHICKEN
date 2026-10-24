@@ -140,11 +140,14 @@ export class Match {
       this.water += 0.4;
       this.emit({ k: 'sfx', s: 'water' });
     }
+    const isCpu = team.cpu !== null && team.cpu !== undefined;
+    const aliveMine = mine.filter((c) => c.alive);
+    const canPick = this.cfg.pickChicken === 'choose' && !isCpu && aliveMine.length > 1;
     this.turn = {
-      team: ti, ch: ch.id, slot, cpu: team.cpu !== null && team.cpu !== undefined, clock: this.cfg.turnTime, retreat: 0,
+      team: ti, ch: ch.id, slot, cpu: isCpu, clock: this.cfg.turnTime, retreat: 0,
       weapon: team.lastWeapon && team.inv[team.lastWeapon] !== 0 ? team.lastWeapon : 'bazuca', fuse: 3, mode: 'walk', pitch: 0.35, power: 0, charging: false,
       shots: 0, fired: false, over: false, cursor: null, view: false, prevFire: false, inp: { mx: 0, my: 0, fire: false, jumpHeld: false },
-      walker: null, track: null, ropeUsed: false,
+      walker: null, track: null, ropeUsed: false, canPick, pickT: canPick ? 10 : 0,
     };
     ch.rope = null; ch.jet = 0; ch.umbrella = false;
     this.phase = 'play';
@@ -233,6 +236,22 @@ export class Match {
       case 'fuse': T.fuse = Math.max(1, Math.min(5, a.v | 0)); this.emit({ k: 'sfx', s: 'select' }); break;
       case 'aim': if (T.mode !== 'target') T.mode = T.mode === 'aim' ? 'walk' : 'aim'; break;
       case 'view': T.view = !T.view; break;
+      case 'pickch': {
+        if (this.phase !== 'play' || !T.canPick || T.cpu) break;
+        const alive = this.chickens.filter((c) => c.team === T.team && c.alive);
+        if (alive.length <= 1) { T.canPick = false; break; }
+        const d = a.d < 0 ? -1 : 1;
+        const idx = alive.findIndex((c) => c.id === T.ch);
+        const next = alive[(idx + d + alive.length) % alive.length];
+        if (next && next.id !== T.ch) {
+          T.ch = next.id;
+          if (T.mode === 'target') {
+            T.cursor = { x: next.x + Math.sin(next.yaw) * 8, z: next.z + Math.cos(next.yaw) * 8 };
+          }
+          this.emit({ k: 'sfx', s: 'select' });
+        }
+        break;
+      }
       case 'surrender':
         for (const c of this.chickens) if (c.team === T.team && c.alive) { c.hp = 0; c.dying = 0.5 + this.r(); }
         this.emit({ k: 'banner', text: `${team.name} se rinde`, sub: '🏳️' });
@@ -243,6 +262,7 @@ export class Match {
   }
 
   jump(ch, back) {
+    if (this.turn) this.turn.canPick = false;
     if (ch.rope) { ch.rope = null; ch.air = true; ch.knock = false; ch.peakY = ch.y; this.emit({ k: 'sfx', s: 'jump' }); return; }
     if (!ch.ground || ch.air) return;
     const f = back ? -1.4 : 3.6;
@@ -259,6 +279,7 @@ export class Match {
   // disparar el arma actual
   fire(power) {
     const T = this.turn, ch = this.activeChicken();
+    T.canPick = false;
     const team = this.teams[T.team];
     const w = weaponById(T.weapon);
     if (team.inv[w.id] === 0) { this.emit({ k: 'sfx', s: 'empty' }); return; }
@@ -525,6 +546,10 @@ export class Match {
 
     if (this.phase === 'play' || this.phase === 'retreat') {
       if (this.phase === 'play') {
+        if (T.canPick) {
+          T.pickT -= dt;
+          if (T.pickT <= 0) T.canPick = false;
+        }
         // el reloj se detiene mientras la gallina corre o hay algo volando del jugador
         if (!T.walker) T.clock -= dt;
         if (T.clock <= 0) { T.clock = 0; this.endTurn('time'); }
@@ -598,7 +623,7 @@ export class Match {
 
     if (canFire && !ch.rope || (canFire && w.id === 'cuerda')) {
       if (w.aim === 'power') {
-        if (firePress) { T.charging = true; T.power = 0; this.emit({ k: 'sfx', s: 'charge' }); }
+        if (firePress) { T.canPick = false; T.charging = true; T.power = 0; this.emit({ k: 'sfx', s: 'charge' }); }
         if (T.charging) {
           T.power = Math.min(1, T.power + dt / MAX_POWER_TIME);
           if (fireRelease || T.power >= 1) { T.charging = false; this.fire(T.power); T.power = 0; }
@@ -612,6 +637,7 @@ export class Match {
     if (T.charging) return;
     if (ch.rope) { this.ropeStep(ch, mx, my, dt); return; }
     if (ch.jet > 0) {
+      T.canPick = false;
       ch.jet -= dt;
       const fx = Math.sin(ch.yaw), fz = Math.cos(ch.yaw);
       ch.yaw -= mx * TURN * dt;
@@ -625,6 +651,7 @@ export class Match {
     if ((T.mode === 'walk' || (T.mode === 'aim' && !T.cpu)) && ch.ground && !ch.air) {
       ch.yaw -= mx * TURN * dt;
       if (my) {
+        T.canPick = false;
         const sp = (my > 0 ? WALK : WALK * 0.6) * my;
         this.walkStep(ch, Math.sin(ch.yaw) * sp * dt, Math.cos(ch.yaw) * sp * dt);
         ch.walk += dt; ch.movingT = 0.15;
@@ -979,11 +1006,12 @@ export class Match {
     const team = this.teams[T.team];
     const ch = this.activeChicken();
     return {
-      team: T.team, teamName: team.name, color: team.color, ch: ch ? ch.name : '', slot: T.slot, cpu: T.cpu,
+      team: T.team, teamName: team.name, color: team.color, ch: ch ? ch.name : '', chId: T.ch, slot: T.slot, cpu: T.cpu,
       clock: Math.ceil(T.clock), retreat: this.phase === 'retreat' ? Math.ceil(T.retreat) : 0, phase: this.phase,
       weapon: T.weapon, fuse: T.fuse, mode: T.mode, inv: team.inv, walker: !!T.walker, power: T.power, charging: T.charging,
       pitch: Math.round(T.pitch * 1000) / 1000, yaw: ch ? Math.round(ch.yaw * 1000) / 1000 : 0,
       wind: Math.round(Math.hypot(this.wind.x, this.wind.z) * 10), dd: team.dd, jet: ch && ch.jet > 0, rope: ch && !!ch.rope, umbrella: ch && ch.umbrella,
+      canPick: !!T.canPick,
     };
   }
 

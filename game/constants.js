@@ -132,6 +132,10 @@ export const TURN_TIMES = [30, 45, 60];
 export const HP_OPTIONS = [100, 150, 200];
 export const CHICKEN_COUNTS = [2, 3, 4];
 export const SUDDEN_OPTIONS = [5, 10, 15];
+export const PICK_CHICKEN_OPTIONS = [
+  { id: 'auto', name: 'Automático' },
+  { id: 'choose', name: 'Elegir' },
+];
 export const QUALITY = [
   { id: 'alta', name: 'Alta' },
   { id: 'normal', name: 'Normal' },
@@ -155,6 +159,7 @@ export const DEFAULT_CFG = {
   turnTime: 45,
   weaponSet: 'clasico',
   island: RANDOM_ISLAND,
+  pickChicken: 'auto',
   sudden: 10,
   cpuTeams: 1,
   cpuLevel: 1,

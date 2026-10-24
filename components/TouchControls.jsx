@@ -195,6 +195,13 @@ export function TurnPad({ info, inv, onInput, onAct, onAim, prefs }) {
         bottom={info.rope ? 'Bajar' : 'Retroceder'}
         onMove={(x, y) => { st.current.mx = x; st.current.my = y; send(); }}
       />
+      {info.canPick && (
+        <div className="pickbar">
+          <button type="button" className="pick-prev" onClick={() => { vib(12); onAct({ t: 'pickch', d: -1 }); }}>◀</button>
+          <span>🐔 {info.ch}</span>
+          <button type="button" className="pick-next" onClick={() => { vib(12); onAct({ t: 'pickch', d: 1 }); }}>▶</button>
+        </div>
+      )}
       {!info.retreat && !info.walker && (
         <button className="wbtn" onClick={() => setGrid(true)}>
           <span className="ic">{w.icon}</span>
