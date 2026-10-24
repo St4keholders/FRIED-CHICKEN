@@ -275,6 +275,7 @@ export class GameHost {
 
   setCfg(c) {
     const cfg = this.cfg;
+    const prevMode = cfg.mode;
     if (MODES.some((m) => m.id === c.mode)) cfg.mode = c.mode;
     if (Number.isInteger(c.storyLevel) && c.storyLevel >= 1 && c.storyLevel <= 8) cfg.storyLevel = c.storyLevel;
     if (TEAM_MODES.some((m) => m.id === c.teamMode)) cfg.teamMode = c.teamMode;
@@ -284,8 +285,15 @@ export class GameHost {
     if (WEAPON_SETS.some((w) => w.id === c.weaponSet)) cfg.weaponSet = c.weaponSet;
     const prevIsland = cfg.island;
     if (c.island === RANDOM_ISLAND || ISLANDS.some((i) => i.id === c.island)) cfg.island = c.island;
-    if (this.phase === 'lobby' && c.island && (cfg.island !== prevIsland || (cfg.island !== RANDOM_ISLAND && (!this.demo || this.demo.island !== cfg.island)))) {
-      this.startDemo(cfg.island === RANDOM_ISLAND ? null : cfg.island);
+    if (this.phase === 'lobby') {
+      if (cfg.mode === 'historia' && (c.mode === 'historia' || c.storyLevel !== undefined || prevMode !== 'historia')) {
+        const lvl = levelById(cfg.storyLevel || 1);
+        if (lvl && (!this.demo || this.demo.island !== lvl.island)) {
+          this.startDemo(lvl.island);
+        }
+      } else if (c.island && (cfg.island !== prevIsland || (cfg.island !== RANDOM_ISLAND && (!this.demo || this.demo.island !== cfg.island)))) {
+        this.startDemo(cfg.island === RANDOM_ISLAND ? null : cfg.island);
+      }
     }
     if (SUDDEN_OPTIONS.includes(c.sudden)) cfg.sudden = c.sudden;
     if (PICK_CHICKEN_OPTIONS.some((o) => o.id === c.pickChicken)) cfg.pickChicken = c.pickChicken;

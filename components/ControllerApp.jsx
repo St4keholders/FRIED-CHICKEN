@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, WEAPONS, sensRad, islandName, weaponById } from '../game/constants';
 import { peerOptionsFromURL } from '../game/peeropts';
 import { Audio } from '../game/audio';
-import { ConfigPanel, ConfigSummary, TeamBars, MatchHud, Radar, Results, MyChicken } from './Shared';
+import { ConfigPanel, ConfigSummary, TeamBars, MatchHud, Radar, Results, MyChicken, CinematicOverlay } from './Shared';
 import { TurnPad, WeaponGrid, SensPanel } from './TouchControls';
 
 function getPid() {
@@ -41,6 +41,9 @@ export default function ControllerApp() {
   const [portrait, setPortrait] = useState(false);
   const [finePtr, setFinePtr] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? (window.matchMedia('(pointer: fine)').matches && !window.matchMedia('(pointer: coarse)').matches) : false));
   const [pcGrid, setPcGrid] = useState(false);
+  const [cinema, setCinema] = useState(null);
+  const [story, setStory] = useState(null);
+  const [unlockedZorro, setUnlockedZorro] = useState(false);
 
   const connRef = useRef(null);
   const mirrorRef = useRef(null);
@@ -114,12 +117,23 @@ export default function ControllerApp() {
       case 'full': setStatus('full'); break;
       case 'busy': setStatus('busy'); break;
       case 'kicked': setStatus('kicked'); break;
-      case 'lobby': setLobby(m); break;
+      case 'lobby':
+        setLobby(m);
+        if (m.unlockedZorro !== undefined) setUnlockedZorro(!!m.unlockedZorro);
+        break;
       case 'phase':
-        setPhase(m.phase); setResults(m.results || null);
+        setPhase(m.phase);
+        setResults(m.results || null);
+        setCinema(m.cinema || null);
+        setStory(m.story || null);
+        if (m.unlockedZorro !== undefined) setUnlockedZorro(!!m.unlockedZorro);
         if (m.phase !== 'match') { setTurn(null); setPcGrid(false); }
         break;
-      case 'turn': setTurn(m); setPaused(!!m.paused); break;
+      case 'turn':
+        setTurn(m);
+        setPaused(!!m.paused);
+        if (m.story) setStory(m.story);
+        break;
       case 'paused': setPaused(!!m.v); break;
       case 'buzz': vib(m.ms || 60); break;
       case 'minit': if (mirrorRef.current) mirrorRef.current.setInit(m); else pendingInit.current = m; break;
@@ -130,6 +144,7 @@ export default function ControllerApp() {
         }
         break;
       case 'snap':
+        if (m.cine) setCinema(m.cine);
         if (mirrorRef.current) {
           mirrorRef.current.snap(m);
           for (const e of m.fx || []) { mirrorRef.current.fx(e); playFx(e); }
@@ -156,7 +171,7 @@ export default function ControllerApp() {
 
   // vista del juego en el celular o en modo PC
   useEffect(() => {
-    if (phase !== 'match' || !viewOn || !stageRef.current) return undefined;
+    if ((phase !== 'match' && phase !== 'cinematic') || !viewOn || !stageRef.current) return undefined;
     let mv = null, raf = 0, alive = true, last = performance.now();
     import('../game/mirror').then(({ MirrorView }) => {
       if (!alive) return;
@@ -376,7 +391,7 @@ export default function ControllerApp() {
       <div className={`ctrl ${pcMode ? 'pcmode' : ''}`} onPointerDown={initAudio}>
         <div className="scroll">
           <div className="stack" style={{ maxWidth: 560, margin: '0 auto' }}>
-            <MyChicken me={me} slot={slot} players={lobby.players} cfg={lobby.cfg} onPick={pick} />
+            <MyChicken me={me} slot={slot} players={lobby.players} cfg={lobby.cfg} onPick={pick} unlockedZorro={unlockedZorro} />
             <div className="card">
               <div className="lab" style={{ marginTop: 0 }}>Dispositivo y controles</div>
               <div className="seg">
@@ -401,7 +416,7 @@ export default function ControllerApp() {
               <div className="card">
                 <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap' }}>
                   <h3 style={{ margin: 0 }}>Ajustes (los manejas tú)</h3>
-                  <span className="pill isl-pill">🗺️ {islandName(lobby.cfg.island)}</span>
+                  <span className="pill isl-pill">{lobby.cfg.mode === 'historia' ? `📖 Nivel ${lobby.cfg.storyLevel || 1}` : `🗺️ ${islandName(lobby.cfg.island)}`}</span>
                 </div>
                 <ConfigPanel cfg={lobby.cfg} onCfg={(cfg) => send({ t: 'cfg', cfg })} canEdit humans={humans} />
                 <button className="btn red big" style={{ width: '100%', marginTop: 14 }} onClick={() => { initAudio(); if (!pcMode) goFullscreen(); send({ t: 'start' }); }}>¡A PELEAR!</button>
@@ -431,6 +446,14 @@ export default function ControllerApp() {
   return (
     <div className={`ctrl ${pcMode ? 'pcmode' : ''}`} onPointerDown={() => { initAudio(); }}>
       {viewOn && phase !== 'lobby' && <div className="mstage" ref={stageRef} />}
+      {phase === 'cinematic' && cinema && (
+        <CinematicOverlay
+          cinema={cinema}
+          isHost={isHost}
+          onNext={() => send({ t: 'cine', act: 'next' })}
+          onSkip={() => send({ t: 'cine', act: 'skip' })}
+        />
+      )}
       {pcMode && phase === 'match' && (
         <MatchHud
           turn={hudTurn}
@@ -441,7 +464,8 @@ export default function ControllerApp() {
           radar={turn ? turn.radar : null}
           sudden={turn ? turn.sudden : false}
           suddenIn={turn ? turn.suddenIn : 0}
-          showSudden={phase === 'match'}
+          showSudden={phase === 'match' && (!lobby || !lobby.cfg || lobby.cfg.mode !== 'historia')}
+          story={story}
           kbTurn={myTurn}
           onOpenWeapons={myTurn && info ? () => setPcGrid(true) : null}
           onPickChicken={myTurn && info && info.canPick ? (d) => send({ t: 'act', a: { t: 'pickch', d } }) : null}
@@ -474,6 +498,12 @@ export default function ControllerApp() {
       </div>
       {!pcMode && viewOn && phase === 'match' && turn && turn.radar && (
         <Radar items={turn.radar} camYaw={camYaw} small />
+      )}
+      {!pcMode && phase === 'match' && story && (
+        <div className="story-goal-card" style={{ top: 52 }}>
+          <div className="story-goal-title">🎯 Nivel {story.n ?? story.level}: {story.name ?? story.levelName}</div>
+          <div className="story-goal-sub">{story.goalText}</div>
+        </div>
       )}
       {!pcMode && phase === 'match' && info && (viewOn || !myTurn) && (
         <div className="mhud" style={viewOn ? {} : { display: 'none' }}>
@@ -535,7 +565,17 @@ export default function ControllerApp() {
           </div>
         </div>
       )}
-      {phase === 'results' && <Results r={results} canAct={isHost} onAgain={() => send({ t: 'next', v: 'again' })} onLobby={() => send({ t: 'next', v: 'lobby' })} />}
+      {phase === 'results' && (
+        <Results
+          r={results}
+          canAct={isHost}
+          onAgain={() => send({ t: 'next', v: 'again' })}
+          onLobby={() => send({ t: 'next', v: 'lobby' })}
+          onNextStory={() => send({ t: 'story_next' })}
+          onRetryStory={() => send({ t: 'story_retry' })}
+          onSkipStory={() => send({ t: 'story_skip' })}
+        />
+      )}
       {!pcMode && phase === 'match' && portrait && <div className="rot"><div><div className="ph">📱</div>Gira el celular para jugar</div></div>}
     </div>
   );

@@ -5,7 +5,7 @@ import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, islandName } from 
 import { sha256 } from '../game/sha256';
 import { peerParamsString } from '../game/peeropts';
 import { chickenPortrait } from '../game/render';
-import { ConfigPanel, MatchHud, Results, MyChicken } from './Shared';
+import { ConfigPanel, MatchHud, Results, MyChicken, CinematicOverlay } from './Shared';
 import { TurnPad, WeaponGrid } from './TouchControls';
 
 function Gate({ onOk }) {
@@ -96,6 +96,14 @@ export default function HostApp() {
   return (
     <div className="stage" ref={stage} onPointerDown={unlockAudio}>
       {st && st.phase === 'lobby' && <Lobby st={st} h={h} qr={qr} url={url} share={share} msg={msg} />}
+      {st && st.phase === 'cinematic' && (
+        <CinematicOverlay
+          cinema={st.cinema}
+          isHost={true}
+          onNext={() => h.advanceCinema()}
+          onSkip={() => h.skipCinema()}
+        />
+      )}
       {st && (st.phase === 'match' || st.phase === 'results') && <Hud st={st} h={h} />}
     </div>
   );
@@ -126,12 +134,12 @@ function Lobby({ st, h, qr, url, share, msg }) {
         <div className={`status ${st.peerStatus === 'error' ? 'err' : ''}`}>{st.peerStatus === 'ready' ? '🟢 Listo para recibir mandos' : st.peerStatus === 'error' ? st.peerError : '🟡 Conectando…'}</div>
       </div>
       {st.local !== null && st.players[st.local] && (
-        <div className="localc"><MyChicken me={st.players[st.local]} slot={st.local} players={st.players} cfg={st.cfg} onPick={(m) => h.pick(st.local, m)} /></div>
+        <div className="localc"><MyChicken me={st.players[st.local]} slot={st.local} players={st.players} cfg={st.cfg} onPick={(m) => h.pick(st.local, m)} unlockedZorro={st.unlockedZorro} /></div>
       )}
       <div className="card cfgc">
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0 }}>Ajustes de la partida</h3>
-          <span className="pill isl-pill">🗺️ {islandName(st.cfg.island)}</span>
+          <span className="pill isl-pill">{st.cfg.mode === 'historia' ? `📖 Nivel ${st.cfg.storyLevel || 1}` : `🗺️ ${islandName(st.cfg.island)}`}</span>
         </div>
         {roNotice && <div className="ro-note">{roNotice}</div>}
         <ConfigPanel cfg={st.cfg} onCfg={(c) => canEdit && h.setCfg(c)} canEdit={canEdit} humans={humans} />
@@ -160,10 +168,11 @@ function Hud({ st, h }) {
       smallRadar={st.local !== null}
       sudden={st.sudden}
       suddenIn={st.suddenIn}
-      showSudden={st.phase === 'match' && st.local === null}
+      showSudden={st.phase === 'match' && st.local === null && st.cfg.mode !== 'historia'}
       banner={st.banner}
       kbTurn={st.kbTurn}
       hideWeapon={!!st.localTurn}
+      story={st.story}
       onOpenWeapons={st.kbTurn && showPlay ? () => setKbGrid(true) : null}
       onPickChicken={st.kbTurn && showPlay && t && t.canPick ? (d) => h.kbAct({ t: 'pickch', d }) : null}
       onToggleFp={st.kbTurn && showPlay ? () => h.kbAct({ t: 'fp' }) : null}
@@ -193,7 +202,17 @@ function Hud({ st, h }) {
           </div>
         </div>
       )}
-      {st.phase === 'results' && <Results r={st.results} canAct={isHost} onAgain={() => h.next('again')} onLobby={() => h.next('lobby')} />}
+      {st.phase === 'results' && (
+        <Results
+          r={st.results}
+          canAct={isHost}
+          onAgain={() => h.next('again')}
+          onLobby={() => h.next('lobby')}
+          onNextStory={() => h.nextStoryLevel()}
+          onRetryStory={() => h.retryStory()}
+          onSkipStory={() => h.skipStoryLevel()}
+        />
+      )}
     </MatchHud>
   );
 }

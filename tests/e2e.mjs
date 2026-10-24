@@ -327,6 +327,40 @@ const tapFire = async (p, ms = 150) => {
   await t.close(); await pc.close();
 }
 
+// ---------- 5. Modo Historia: lobby, selector de niveles, cinemática y HUD ----------
+{
+  const t = await tv({ width: 1366, height: 768 });
+  await t.mouse.click(700, 400); await t.keyboard.press('Space'); await sleep(400);
+  check(await t.locator('.slot .meta', { hasText: 'Teclado' }).count() === 1, 'teclado listo para configurar historia');
+  await t.getByRole('button', { name: 'Modo Historia' }).click(); await sleep(500);
+  check(await t.locator('.story-lvl-grid .story-lvl-btn').count() === 8, 'Modo Historia muestra cuadrícula con los 8 niveles');
+  check(await t.locator('.story-lvl-btn[data-level="1"].on').count() === 1, 'Nivel 1 seleccionado por defecto');
+  await t.locator('.story-lvl-btn[data-level="2"]').click(); await sleep(400);
+  check(await t.locator('.story-lvl-btn[data-level="2"].on').count() === 1, 'se puede seleccionar otro nivel');
+  await t.locator('.story-lvl-btn[data-level="1"]').click(); await sleep(400);
+
+  const code = await t.evaluate(() => sessionStorage.getItem('fc_code'));
+  const a = await phone(code, 'J2');
+  check((await a.locator('.cfg-summary').innerText()).includes('Historia') && (await a.locator('.cfg-summary').innerText()).includes('Aprender a pelear'), 'J2 ve resumen del modo historia y nivel actual');
+
+  await t.keyboard.press('Enter'); await sleep(3500);
+  check(await t.locator('.cine-overlay').count() === 1 && await t.locator('.cine-card').count() === 1, 'cinemática de introducción visible en TV');
+  check(await a.locator('.cine-overlay').count() === 1, 'cinemática de introducción sincronizada en celular');
+  const spName = await t.locator('.cine-speaker').innerText();
+  check(spName.length > 0, 'se muestra el personaje que habla en la cinemática');
+
+  await t.locator('.cine-next-btn').click(); await sleep(800);
+  check((await t.locator('.cine-step').innerText()).includes('2 de 4'), 'avanzar la cinemática pasa al siguiente diálogo');
+  await t.screenshot({ path: OUT + '5_cinematica.png' });
+
+  await t.locator('.cine-skip-btn').click(); await sleep(3000);
+  check(await t.locator('.story-goal-card').count() === 1, 'al empezar la partida el HUD muestra la tarjeta de objetivo de historia');
+  check((await t.locator('.story-goal-card').innerText()).includes('Aprender a pelear'), 'el objetivo describe el nivel actual');
+  await t.screenshot({ path: OUT + '5_historia_hud.png' });
+
+  await t.close(); await a.close();
+}
+
 await browser.close();
 console.log(errors.length ? `\nErrores de consola:\n${errors.join('\n')}` : '\nSin errores de consola');
 console.log(fails || errors.length ? `\n${fails} FALLAS` : '\nTodo bien');

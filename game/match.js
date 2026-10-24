@@ -848,7 +848,7 @@ export class Match {
       hint = (L.hints.find((h) => h.id === id) || {}).text || '';
     }
     return {
-      n: L.n, name: L.name, goal: L.goal, goalText: L.goalText, round: S.round, limit,
+      n: L.n, level: L.n, name: L.name, levelName: L.name, goal: L.goal, goalText: L.goalText, round: S.round, limit,
       eggs: S.eggs, eggsTotal: L.eggs ? L.eggs.total : 0,
       machines: this.objs.filter((o) => o.kind === 'maquinaLata' && !o.dead).length, machinesTotal: L.machines ? L.machines.count : 0,
       foes: this.chickens.filter((c) => c.alive && this.teams[c.team].alliance !== 'H').length,

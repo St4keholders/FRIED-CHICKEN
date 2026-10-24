@@ -282,3 +282,41 @@ input, select { font-family: var(--body); }
   .pad .fp-btn { bottom: 146px; width: 44px; height: 44px; font-size: 18px; }
   .fusebar { bottom: 204px; }
 }
+
+/* ---------- modo historia ---------- */
+.story-lvl-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+.story-lvl-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; color: var(--ink); font-size: 11px; padding: 6px 8px; box-shadow: 0 3px 0 var(--ink); text-align: left; }
+.story-lvl-btn.on { background: var(--yellow); }
+.story-lvl-btn:disabled { opacity: .55; cursor: default; }
+.story-lvl-num { font-family: var(--font); font-size: 13px; font-weight: 400; color: var(--ink); }
+.story-lvl-name { font-weight: 800; font-size: 11px; line-height: 1.15; color: var(--ink); }
+.story-lvl-isl { font-size: 10px; font-weight: 800; color: var(--ink2); margin-top: 2px; }
+
+.story-goal-card { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--cream); border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); padding: 5px 14px; text-align: center; z-index: 10; pointer-events: none; max-width: min(480px, 92vw); }
+.story-goal-title { font-family: var(--font); font-size: 14px; color: var(--ink); letter-spacing: .3px; }
+.story-goal-sub { font-size: 12px; font-weight: 900; color: var(--ink2); margin-top: 1px; }
+.story-goal-extra { font-size: 11px; font-weight: 800; color: var(--red); margin-top: 2px; }
+.story-hint-card { position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%); background: #fff; border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 var(--ink); padding: 6px 14px; font-size: 13px; font-weight: 900; color: var(--ink); z-index: 10; pointer-events: none; max-width: min(520px, 90vw); text-align: center; animation: pop .25s ease-out; }
+
+/* ---------- cinemáticas ---------- */
+.cine-overlay { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; justify-content: space-between; pointer-events: auto; }
+.cine-letterbox { width: 100%; height: min(56px, 9vh); background: rgba(30, 16, 8, .9); border-bottom: 3px solid var(--ink); pointer-events: none; }
+.cine-letterbox.bottom { border-bottom: none; border-top: 3px solid var(--ink); }
+.cine-wrap { flex: 1; display: flex; align-items: flex-end; justify-content: center; padding: 16px; pointer-events: none; }
+.cine-card { pointer-events: auto; width: min(640px, 100%); background: var(--cream); border: 4px solid var(--ink); border-radius: 22px; box-shadow: 0 6px 0 var(--ink); padding: 14px 16px; display: flex; gap: 14px; align-items: flex-start; animation: pop .2s ease-out; }
+.cine-ava { width: 84px; height: 84px; border-radius: 18px; border: 3px solid var(--ink); background: radial-gradient(circle at 50% 40%, #fff, var(--sc, #ffc93c)); overflow: hidden; flex: none; display: flex; align-items: center; justify-content: center; }
+.cine-ava img { width: 100%; height: 100%; object-fit: contain; }
+.cine-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cine-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cine-speaker { display: inline-flex; align-items: center; gap: 6px; border: 3px solid var(--ink); border-radius: 999px; padding: 2px 12px 3px; background: var(--sc, #ffd23f); color: #fff; font-family: var(--font); font-size: 15px; text-shadow: 0 1px 0 rgba(0,0,0,.3); }
+.cine-step { font-family: var(--font); font-size: 12px; color: var(--ink2); background: #fff; border: 2px solid var(--ink); border-radius: 8px; padding: 1px 6px; font-weight: 800; }
+.cine-text { font-size: 15px; font-weight: 800; line-height: 1.35; color: var(--ink); }
+.cine-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.res-story-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 12px; border: 3px solid var(--ink); background: var(--yellow); font-family: var(--font); font-size: 15px; margin-bottom: 8px; }
+.res-unlocked { background: #e8f7e8; border: 3px dashed var(--green); border-radius: 14px; padding: 10px; margin: 10px 0; font-weight: 900; color: var(--ink); text-align: center; }
+
+@media (max-width: 600px) {
+  .cine-card { padding: 10px 12px; gap: 10px; }
+  .cine-ava { width: 62px; height: 62px; }
+  .cine-text { font-size: 13px; line-height: 1.25; }
+}
