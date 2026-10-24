@@ -152,12 +152,15 @@ const tapFire = async (p, ms = 150) => {
       const h = window.__fcHost;
       const m = h.match;
       const balls = m.objs.filter((o) => o.kind === 'bolaBillar' && !o.dead);
-      const b0 = balls[0];
-      if (!b0) return { count: 0, rolled: false };
-      const x0 = b0.x;
-      m.explode(b0.x - 2.0, b0.y, b0.z, 3.2, 10, 7, false);
-      for (let i = 0; i < 15; i++) m.stepStatic(b0, 1 / 60);
-      return { count: balls.length, rolled: Math.abs(b0.x - x0) > 0.3 };
+      if (!balls.length) return { count: 0, rolled: false };
+      let rolled = false;
+      for (const b0 of balls) {
+        const x0 = b0.x, z0 = b0.z;
+        m.explode(b0.x - 2.0, b0.y, b0.z, 3.2, 10, 7, false);
+        for (let i = 0; i < 20; i++) m.stepStatic(b0, 1 / 60);
+        if (Math.hypot(b0.x - x0, b0.z - z0) > 0.3) { rolled = true; break; }
+      }
+      return { count: balls.length, rolled };
     });
     const t11Phone = await p.evaluate(() => {
       const mr = window.__fcMirror;

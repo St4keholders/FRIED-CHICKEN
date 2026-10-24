@@ -23,7 +23,10 @@ let uid = 1;
 
 export class Match {
   // teams: [{ id, name, color, dark, acc, cpu (null | 0..2), slots: [], alliance, names: [] }]
-  constructor({ cfg, teams, seed, island }) {
+  // Modo Historia: 'story' es un nivel de story.js. Los equipos pueden traer además
+  //   count (cuántos pollitos), hp (su vida), reserve (pollitos de reserva para oleadas),
+  //   npc (no juega turnos, como la Gallina Abuela) y boss (jefe grande).
+  constructor({ cfg, teams, seed, island, story = null }) {
     this.cfg = cfg;
     this.seed = seed;
     this.island = island;
@@ -38,22 +41,44 @@ export class Match {
     this.over = null;
     this.r = rng(seed ^ 0xabcdef);
     this.stats = {};
+    this.story = story ? { level: story, round: 0, eggs: 0, waves: 0, hintDone: false } : null;
     this.teams = teams.map((t, i) => ({ ...t, idx: i, next: 0, turns: 0, inv: startAmmo(cfg.weaponSet), dd: false, visor: false }));
+    if (story && story.ammo) {
+      // munición limitada para los pollitos de los jugadores
+      for (const t of this.teams) if (t.alliance === 'H' && !t.npc) for (const [k, v] of Object.entries(story.ammo)) t.inv[k] = v;
+    }
     for (const t of this.teams) this.stats[t.id] = { dmg: 0, self: 0, drown: 0, kills: 0 };
     // aparecer pollitos
     const per = cfg.chickens;
-    const sp = this.terrain.spawnPoints(this.teams.length * per + 14, 7);
+    const countOf = (t) => (t.count !== undefined ? t.count : per);
+    const maxCount = Math.max(...this.teams.map(countOf));
+    const reserveTotal = this.teams.reduce((s, t) => s + (t.reserve || 0), 0);
+    const need = this.teams.reduce((s, t) => s + countOf(t), 0) + reserveTotal + 14;
+    const sp = this.terrain.spawnPoints(need, 7);
     this.chickens = [];
     let n = 0;
-    // repartir: cada equipo toma puntos alternados para que queden mezclados
-    for (let c = 0; c < per; c++) for (const t of this.teams) {
-      const p = sp[n++] || { x: WORLD_X / 2 + (this.r() - 0.5) * 10, y: 20, z: WORLD_Z / 2 + (this.r() - 0.5) * 10 };
+    const addChicken = (t, name, p, extra = {}) => {
+      const hp = t.hp !== undefined ? t.hp : cfg.hp;
       this.chickens.push({
-        id: this.chickens.length, team: t.idx, name: t.names[c] || `Pollito ${c + 1}`,
+        id: this.chickens.length, team: t.idx, name,
         x: p.x, y: p.y, z: p.z, vx: 0, vy: 0, vz: 0, yaw: this.r() * Math.PI * 2,
-        hp: cfg.hp, alive: true, ground: false, air: true, knock: false, peakY: p.y, walk: 0,
+        hp, maxHp: hp, alive: true, ground: false, air: true, knock: false, peakY: p.y, walk: 0,
         dying: 0, rope: null, jet: 0, umbrella: false, hurtT: 0, backflip: 0,
+        npc: t.npc || null, boss: !!t.boss, scale: t.boss ? (t.boss.scale || 1.7) : 1,
+        ...extra,
       });
+    };
+    // repartir: cada equipo toma puntos alternados para que queden mezclados
+    for (let c = 0; c < maxCount; c++) for (const t of this.teams) {
+      if (c >= countOf(t)) continue;
+      const p = sp[n++] || { x: WORLD_X / 2 + (this.r() - 0.5) * 10, y: 20, z: WORLD_Z / 2 + (this.r() - 0.5) * 10 };
+      addChicken(t, t.names[c] || `Pollito ${c + 1}`, p);
+    }
+    // reservas (oleadas): existen desde el principio pero "no han llegado"
+    for (const t of this.teams) {
+      for (let r = 0; r < (t.reserve || 0); r++) {
+        addChicken(t, `${t.names[(countOf(t) + r) % t.names.length] || 'Lata'} ${r + 2}`, { x: WORLD_X / 2, y: 40, z: WORLD_Z / 2 }, { alive: false, reserve: true, air: false });
+      }
     }
     // barriles, minas y detalles móviles de cada isla
     for (let b = 0; b < 4 && n < sp.length; b++) this.addObj({ kind: 'barril', x: sp[n].x, y: sp[n].y, z: sp[n++].z, hp: 1 });
@@ -114,16 +139,17 @@ export class Match {
 
   // ---------------- turnos ----------------
   startTurn() {
-    const alive = this.aliveTeams().map((t) => t.idx);
+    const alive = this.aliveTeams().filter((t) => !t.npc).map((t) => t.idx);
     if (alive.length === 0) return;
     let ti = this.turnTeam;
     for (let n = 0; n < this.teams.length; n++) {
       ti = (ti + 1) % this.teams.length;
       if (alive.includes(ti)) break;
     }
+    if (this.story && this.storyRound(ti)) return;
     this.turnTeam = ti;
     const team = this.teams[ti];
-    const mine = this.chickens.filter((c) => c.team === ti);
+    const mine = this.chickens.filter((c) => c.team === ti && !c.reserve);
     let ch = null;
     for (let n = 0; n < mine.length; n++) {
       const c = mine[(team.next + n) % mine.length];
@@ -134,8 +160,8 @@ export class Match {
     // viento nuevo cada turno
     const a = this.r() * Math.PI * 2, s = this.r() < 0.15 ? 0 : this.r();
     this.wind = { x: Math.cos(a) * s, z: Math.sin(a) * s };
-    // muerte súbita
-    if (!this.sudden && this.time > this.cfg.sudden * 60) {
+    // muerte súbita (en la Historia no hay)
+    if (!this.story && !this.sudden && this.time > this.cfg.sudden * 60) {
       this.sudden = true;
       for (const c of this.chickens) if (c.alive) c.hp = 1;
       this.emit({ k: 'banner', text: '¡MUERTE SÚBITA!', sub: 'Toda la vida baja a 1 y el agua sube' });
@@ -207,6 +233,7 @@ export class Match {
     const dy = Number(dyaw) || 0;
     const dp = Number(dpitch) || 0;
     if (!dy && !dp) return;
+    T.aimed = true;
     if (T.mode === 'target' && T.cursor) {
       const fx = Math.sin(ch.yaw), fz = Math.cos(ch.yaw);
       const step = 12;
@@ -613,6 +640,11 @@ export class Match {
   }
 
   checkOver() {
+    if (this.story) {
+      const r = this.storyCheck();
+      if (r !== null) this.storyEnd(r);
+      return;
+    }
     const alive = this.aliveTeams();
     const alliances = new Set(alive.map((t) => t.alliance));
     if (alliances.size <= 1) {
@@ -621,6 +653,104 @@ export class Match {
       this.over = { alliance: win, teams: alive.map((t) => t.idx) };
       this.emit({ k: 'over', alliance: win });
     }
+  }
+
+  // ---------------- modo Historia ----------------
+  // Cuenta una ronda cada vez que le toca a los pollitos de los jugadores. Devuelve true si la
+  // partida terminó por límite de rondas (ganar resistiendo o perder por tiempo).
+  storyRound(ti) {
+    const team = this.teams[ti];
+    if (team.alliance !== 'H' || team.npc) return false;
+    const L = this.story.level;
+    const limit = L.rounds || (L.eggs && L.eggs.rounds) || 0;
+    if (limit && this.story.round >= limit) {
+      this.storyEnd(L.goal === 'survive');
+      return true;
+    }
+    const rd = ++this.story.round;
+    if (L.waterEvery && rd > 1 && (rd - 1) % L.waterEvery === 0) {
+      this.water += 0.6;
+      this.emit({ k: 'banner', text: '¡El agua sube!', sub: 'La bañera se está llenando' });
+      this.emit({ k: 'sfx', s: 'water' });
+    }
+    if (L.waves && rd > 1 && rd % L.waves.every === 0) this.spawnWave(L.waves.per);
+    return false;
+  }
+
+  // pollitos de lata de reserva que caen del cielo
+  spawnWave(per) {
+    let k = 0;
+    for (const c of this.chickens) {
+      if (k >= per) break;
+      if (!c.reserve || c.alive) continue;
+      const sp = this.terrain.spawnPoints(1, Math.floor(this.r() * 1e9))[0] || { x: WORLD_X / 2, y: 14, z: WORLD_Z / 2 };
+      c.reserve = false; c.alive = true; c.hp = c.maxHp; c.dying = 0;
+      c.x = sp.x; c.z = sp.z; c.y = sp.y + 2.5; c.peakY = sp.y + 1;
+      c.vx = c.vy = c.vz = 0; c.air = true; c.ground = false; c.knock = false;
+      this.emit({ k: 'poof', x: c.x, y: c.y + 0.6, z: c.z });
+      k++;
+    }
+    if (k) {
+      this.story.waves++;
+      this.emit({ k: 'banner', text: '¡Otra oleada!', sub: `${k} pollitos de lata caen del cielo` });
+      this.emit({ k: 'sfx', s: 'crate' });
+    }
+  }
+
+  // true = ganaron los jugadores, false = perdieron, null = sigue la partida
+  storyCheck() {
+    const L = this.story.level;
+    const alive = this.chickens.filter((c) => c.alive);
+    if (!alive.some((c) => !c.npc && this.teams[c.team].alliance === 'H')) return false;
+    if (L.abuela && !alive.some((c) => c.npc === 'abuela')) return false;
+    const foes = alive.filter((c) => this.teams[c.team].alliance !== 'H');
+    switch (L.goal) {
+      case 'eliminate': case 'water': case 'protect': return foes.length === 0 ? true : null;
+      case 'boss': return alive.some((c) => c.boss) ? null : true;
+      case 'eggs': return this.story.eggs >= L.eggs.total ? true : null;
+      case 'machines': {
+        if (!this.objs.some((o) => o.kind === 'maquinaLata' && !o.dead)) return true;
+        return this.storyOutOfAmmo() ? false : null;
+      }
+      default: return null; // survive: se gana al terminar las rondas
+    }
+  }
+
+  // sin munición de ataque (y nada volando): ya no se pueden destruir las máquinas
+  storyOutOfAmmo() {
+    const team = this.teams.find((t) => t.alliance === 'H' && !t.npc);
+    if (!team) return true;
+    const left = ['bazuca', 'granada', 'maiz', 'oro', 'palomas', 'guacamaya', 'mina', 'vela', 'gallina'].some((w) => team.inv[w] !== 0 && team.inv[w] !== undefined);
+    return !left && !this.objs.some((o) => !o.dead && o.proj);
+  }
+
+  storyEnd(win) {
+    const alive = this.aliveTeams();
+    this.phase = 'over';
+    this.turn = null;
+    this.over = { alliance: win ? 'H' : 'C', teams: alive.filter((t) => (t.alliance === 'H') === win).map((t) => t.idx), story: true, win };
+    this.emit({ k: 'over', alliance: this.over.alliance });
+  }
+
+  // lo que la interfaz muestra del objetivo del nivel
+  storyView() {
+    const S = this.story;
+    if (!S) return null;
+    const L = S.level;
+    const limit = L.rounds || (L.eggs && L.eggs.rounds) || 0;
+    const T = this.turn;
+    let hint = '';
+    if (L.hints && S.round <= 2 && T && !T.cpu && this.phase === 'play') {
+      const id = !T.moved ? 'walk' : !T.aimed ? 'aim' : 'fire';
+      hint = (L.hints.find((h) => h.id === id) || {}).text || '';
+    }
+    return {
+      n: L.n, name: L.name, goal: L.goal, goalText: L.goalText, round: S.round, limit,
+      eggs: S.eggs, eggsTotal: L.eggs ? L.eggs.total : 0,
+      machines: this.objs.filter((o) => o.kind === 'maquinaLata' && !o.dead).length, machinesTotal: L.machines ? L.machines.count : 0,
+      foes: this.chickens.filter((c) => c.alive && this.teams[c.team].alliance !== 'H').length,
+      hint,
+    };
   }
 
   playerStep(dt) {
@@ -681,6 +811,7 @@ export class Match {
       ch.yaw -= mx * TURN * dt;
       if (my) {
         T.canPick = false;
+        T.moved = true;
         const mat = this.terrain.matUnder(ch.x, ch.y, ch.z);
         const slow = this.island === 'banera' && mat === M.WHITE ? 0.42 : 1;
         const sp = (my > 0 ? WALK : WALK * 0.6) * my * slow;
@@ -1151,8 +1282,8 @@ export class Match {
 
   teamSummary() {
     return this.teams.map((t) => {
-      const mine = this.chickens.filter((c) => c.team === t.idx);
-      return { idx: t.idx, name: t.name, color: t.color, cpu: t.cpu !== null && t.cpu !== undefined, alliance: t.alliance, hp: mine.reduce((s, c) => s + (c.alive ? c.hp : 0), 0), max: mine.length * this.cfg.hp, alive: mine.filter((c) => c.alive).length };
+      const mine = this.chickens.filter((c) => c.team === t.idx && (!c.reserve || c.alive));
+      return { idx: t.idx, name: t.name, color: t.color, cpu: t.cpu !== null && t.cpu !== undefined, alliance: t.alliance, hp: mine.reduce((s, c) => s + (c.alive ? c.hp : 0), 0), max: mine.reduce((s, c) => s + (c.maxHp || this.cfg.hp), 0), alive: mine.filter((c) => c.alive).length, npc: !!t.npc };
     });
   }
 }

@@ -151,3 +151,38 @@ export const LEVELS = [
 export const LEVEL_COUNT = LEVELS.length;
 export function levelById(n) { return LEVELS[Math.max(0, Math.min(LEVELS.length - 1, (n | 0) - 1))]; }
 export function isValidLevel(n) { return Number.isInteger(n) && n >= 1 && n <= LEVELS.length; }
+
+const ENEMY_NAMES = ['Tuerca', 'Tornillo', 'Latón', 'Chatarra', 'Bujía', 'Resorte', 'Clavo', 'Pistón'];
+
+// Equipos de un nivel. hero: { name, color, dark, acc, names, slots, count } (todos los jugadores juntos).
+// El enemigo siempre es CPU; la Gallina Abuela y los jefes son equipos aparte.
+export function storyTeams(level, hero) {
+  const teams = [{
+    id: 'h0', name: hero.name, color: hero.color, dark: hero.dark, acc: hero.acc, robot: false, cpu: null,
+    slots: hero.slots || [], alliance: 'H', names: hero.names, count: hero.count || 3, hp: level.heroHp,
+  }];
+  teams.push({
+    id: 'c0', name: 'Pollitos de Lata', color: '#9aa7b4', dark: '#5d6873', acc: 'casco', robot: true, cpu: level.enemy.cpu,
+    slots: [], alliance: 'C', names: ENEMY_NAMES.slice(0, 4), count: level.enemy.count, hp: level.enemy.hp,
+    reserve: level.waves ? level.waves.total : 0,
+  });
+  if (level.abuela) {
+    teams.push({
+      id: 'a0', name: 'Gallina Abuela', color: '#f0dcc0', dark: '#b89c78', acc: 'chef', robot: false, cpu: null,
+      slots: [], alliance: 'H', names: ['Abuela'], count: 1, hp: level.abuela.hp, npc: 'abuela',
+    });
+  }
+  if (level.boss) {
+    const zorro = level.boss.id === 'zorro';
+    teams.push({
+      id: 'b0', name: level.boss.name, color: zorro ? '#ff9f1a' : '#6d7a88', dark: zorro ? '#c46a00' : '#444e58', acc: zorro ? 'zorro' : 'casco',
+      robot: !zorro, cpu: 2, slots: [], alliance: 'C', names: [level.boss.name], count: 1, hp: level.boss.hp, boss: level.boss,
+    });
+  }
+  return teams;
+}
+
+// Configuración de la partida de un nivel (la Historia no usa muerte súbita).
+export function storyCfg(base, level, heroCount) {
+  return { ...base, mode: 'historia', teamMode: 'shared', chickens: heroCount || 3, hp: level.heroHp, turnTime: 45, weaponSet: 'clasico', sudden: 999, cpuTeams: 1, island: level.island };
+}

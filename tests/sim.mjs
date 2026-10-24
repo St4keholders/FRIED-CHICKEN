@@ -5,16 +5,19 @@ import { CpuBrain } from '../game/ai.js';
 import { DEFAULT_CFG, WEAPONS } from '../game/constants.js';
 import { ISLAND_IDS } from '../game/islands.js';
 import { M } from '../game/terrain.js';
-import { LEVELS, GOALS, SPEAKER_IDS, levelById, isValidLevel } from '../game/story.js';
+import { LEVELS, GOALS, SPEAKER_IDS, levelById, isValidLevel, storyTeams, storyCfg } from '../game/story.js';
 import { buildCinematic, beatCamera, focusPoint, Cinema, CAM_STYLES } from '../game/cinema.js';
 import { ISLANDS } from '../game/constants.js';
 
 const dt = 1 / 60;
 const mkTeams = (cpu) => [0, 1].map((i) => ({ id: 't' + i, name: 'T' + i, color: '#f00', dark: '#800', acc: 'casco', cpu, slots: cpu === null ? [i] : [], alliance: 't' + i, names: ['a', 'b', 'c', 'd'] }));
 let fails = 0;
+// SIM_QUICK=1 salta las partidas CPU contra CPU de las 3 dificultades (para iterar rápido)
+const quick = !!process.env.SIM_QUICK;
 
 // 1) CPU contra CPU en cada dificultad e isla
 for (const level of [0, 1, 2]) for (const island of ISLAND_IDS) {
+  if (quick) continue;
   const m = new Match({ cfg: { ...DEFAULT_CFG, chickens: 3 }, teams: mkTeams(level), seed: 1000 + level * 7 + island.length, island });
   const brains = m.teams.map(() => new CpuBrain(m, level));
   let last = null, turns = 0, maxMs = 0;
@@ -263,6 +266,91 @@ for (const w of WEAPONS) {
   const allOk = namesOk && flowOk && camOk && focusOk && skipOk;
   if (!allOk) fails++;
   console.log(`${allOk ? 'OK ' : 'MAL'} cinemáticas: hablan los pollitos de los jugadores, cámara con números válidos, avanzar y saltar`);
+}
+// ---- modo Historia: ayudantes ----
+const HERO = { name: 'Los Crocantes', color: '#ff4757', dark: '#b3202e', acc: 'casco', names: ['Pío', 'Kiki', 'Plumón', 'Tito'], slots: [0], count: 3 };
+function storyMatch(n, seed, heroCpu = 2) {
+  const L = levelById(n);
+  const teams = storyTeams(L, HERO);
+  teams[0].cpu = heroCpu; // por defecto los héroes los juega una CPU difícil (solo para las pruebas)
+  const m = new Match({ cfg: storyCfg(DEFAULT_CFG, L, 3), teams, seed, island: L.island, story: L });
+  const brains = teams.map((t) => (t.npc ? null : new CpuBrain(m, t.cpu)));
+  return { m, L, brains };
+}
+function playStory(n, seed, maxMin = 14) {
+  const { m, L, brains } = storyMatch(n, seed);
+  let last = null, turns = 0;
+  const npcTurns = [];
+  for (let f = 0; f < 60 * 60 * maxMin && m.phase !== 'over'; f++) {
+    if (m.turn && m.turn !== last) {
+      last = m.turn; turns++;
+      if (m.chickens[m.turn.ch].npc) npcTurns.push(m.turn.ch);
+      brains[m.turn.team].begin();
+    }
+    if (m.turn && (m.phase === 'play' || m.phase === 'retreat')) brains[m.turn.team].update(dt);
+    m.update(dt);
+    m.fx.length = 0;
+  }
+  return { m, L, turns, npcTurns };
+}
+function winStory(n, tries = 4) {
+  let r = null;
+  for (let i = 0; i < tries; i++) { r = playStory(n, 4000 + n * 31 + i * 7); if (r.m.over && r.m.over.win) return { ...r, tries: i + 1 }; }
+  return { ...r, tries };
+}
+
+// 10) niveles 1, 2, 4 y 7: eliminar, agua que sube, proteger a la abuela y supervivencia
+{
+  // nivel 1: tutorial con pistas paso a paso y 2 pollitos de lata
+  const s1 = storyMatch(1, 11, null);
+  while (s1.m.phase !== 'play') s1.m.update(dt);
+  const T1 = s1.m.turn;
+  const h1 = s1.m.storyView().hint;
+  T1.moved = true; const h2 = s1.m.storyView().hint;
+  T1.aimed = true; const h3 = s1.m.storyView().hint;
+  const foes1 = s1.m.chickens.filter((c) => s1.m.teams[c.team].alliance !== 'H' && c.alive).length;
+  const l1Ok = h1.includes('Camina') && h2.includes('apuntar') && h3.includes('FUEGO') && foes1 === 2 && s1.m.sudden === false;
+
+  // nivel 2: el agua sube cada 3 rondas
+  const s2 = storyMatch(2, 12);
+  const w0 = s2.m.water;
+  for (let i = 0; i < 3; i++) s2.m.storyRound(0);
+  const wAfter3 = s2.m.water;
+  s2.m.storyRound(0);
+  const l2Ok = wAfter3 === w0 && s2.m.water > w0 && s2.m.story.round === 4;
+
+  // nivel 4: la Gallina Abuela es aliada que no juega turnos
+  const s4 = storyMatch(4, 14);
+  const ab = s4.m.chickens.find((c) => c.npc === 'abuela');
+  const abTeam = s4.m.teams[ab.team];
+  const l4a = !!ab && ab.hp === 80 && abTeam.alliance === 'H' && abTeam.npc === 'abuela';
+  const r4 = playStory(4, 4004);
+  const l4b = r4.npcTurns.length === 0 && r4.m.phase === 'over' && r4.m.over.story === true;
+  // si matan a la abuela, se pierde aunque queden héroes
+  const s4b = storyMatch(4, 15);
+  const ab2 = s4b.m.chickens.find((c) => c.npc === 'abuela');
+  ab2.hp = 0; ab2.alive = false;
+  const l4c = s4b.m.storyCheck() === false;
+  const l4Ok = l4a && l4b && l4c;
+
+  // nivel 7: oleadas de reserva y se gana al terminar las 6 rondas
+  const s7 = storyMatch(7, 17);
+  const foesAt = () => s7.m.chickens.filter((c) => c.alive && s7.m.teams[c.team].alliance !== 'H').length;
+  const f0 = foesAt();
+  const reserves = s7.m.chickens.filter((c) => c.reserve).length;
+  s7.m.storyRound(0); s7.m.storyRound(0); // ronda 1 y 2: llega la primera oleada
+  const f2 = foesAt();
+  for (let i = 0; i < 4; i++) s7.m.storyRound(0); // rondas 3 a 6
+  const f6 = foesAt();
+  const ended = s7.m.storyRound(0); // al empezar la ronda 7 se acaba: ganaron resistiendo
+  const l7Ok = f0 === 2 && reserves === 6 && f2 === 4 && f6 === 8 && ended === true && s7.m.phase === 'over' && s7.m.over.win === true && s7.m.over.alliance === 'H';
+
+  // las 4 partidas completas con jugadores automáticos terminan y se ganan
+  const wins = [1, 2, 4, 7].map((n) => ({ n, ...winStory(n) }));
+  const winOk = wins.every((w) => w.m.phase === 'over' && w.m.over.story && w.m.over.win);
+  const allOk = l1Ok && l2Ok && l4Ok && l7Ok && winOk;
+  if (!allOk) fails++;
+  console.log(`${allOk ? 'OK ' : 'MAL'} historia niveles 1, 2, 4 y 7 (pistas ${l1Ok}, agua ${l2Ok}, abuela ${l4Ok}, oleadas ${l7Ok}, partidas ${wins.map((w) => `N${w.n}:${w.m.over && w.m.over.win ? 'gana' : 'no'}/${w.tries}`).join(' ')})`);
 }
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

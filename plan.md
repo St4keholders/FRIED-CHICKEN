@@ -163,7 +163,7 @@ Marca la revisión como hecha cuando hayas leído todos los archivos de `game/` 
   - Prueba: completar los 8 niveles con jugadores automáticos (puedes reutilizar `CpuBrain` para los humanos en `tests/sim.mjs`), reintentar, saltar nivel y empezar en cualquier nivel.
   - Subtareas (una por vuelta):
     - [x] **T12.1** Datos: `game/story.js` (8 niveles: isla, objetivo, enemigos, cielo, pistas, guiones de intro y final) y `game/cinema.js` (resuelve quién habla, retrato y encuadre/paneo/zoom de cámara). Modo de cámara `cine` en `render.js`.
-    - [ ] **T12.2a** `match.js`: base de historia (`story` en `Match`, `checkOver` por nivel, reservas de enemigos, rondas) + niveles 1, 2, 4 y 7 (eliminar, agua que sube, proteger a la Gallina Abuela, supervivencia por oleadas).
+    - [x] **T12.2a** `match.js`: base de historia (`story` en `Match`, `checkOver` por nivel, reservas de enemigos, rondas) + niveles 1, 2, 4 y 7 (eliminar, agua que sube, proteger a la Gallina Abuela, supervivencia por oleadas).
     - [ ] **T12.2b** Niveles 3 y 5: Huevitos (`cajaHuevo`, 3 en 8 rondas) y máquinas de lata (`maquinaLata`, 4, munición limitada), con modelos nuevos.
     - [ ] **T12.2c** Niveles 6 y 8: jefes (Sargento Lata con escudo frontal; Zorro Rufo con fases, cambia de arma y lanza piezas), tamaño grande y cielo de noche/atardecer.
     - [ ] **T12.3a** `host.js`: modo `historia`, selector de nivel, fase `cinematic` (Enter/clic/Siguiente, Saltar solo J1), siguiente nivel, reintentar/saltar nivel, desbloqueo del accesorio `zorro`.
