@@ -1,6 +1,6 @@
 // Simulación autoritativa de una partida: turnos, física de pollitos, armas, objetos y victoria.
 // Corre solo en el anfitrión; los celulares reciben fotos (snapshots) y cambios del terreno.
-import { Terrain, rng } from './terrain.js';
+import { Terrain, rng, M } from './terrain.js';
 import { VOX, NX, NZ, WORLD_X, WORLD_Z, GRAVITY, PROJ_GRAVITY, CHICKEN_R, CHICKEN_H, RETREAT_TIME, WEAPONS, weaponById, startAmmo, canFpWeapon } from './constants.js';
 import { quote } from './voices.js';
 
@@ -42,7 +42,7 @@ export class Match {
     for (const t of this.teams) this.stats[t.id] = { dmg: 0, self: 0, drown: 0, kills: 0 };
     // aparecer pollitos
     const per = cfg.chickens;
-    const sp = this.terrain.spawnPoints(this.teams.length * per + 8, 7);
+    const sp = this.terrain.spawnPoints(this.teams.length * per + 14, 7);
     this.chickens = [];
     let n = 0;
     // repartir: cada equipo toma puntos alternados para que queden mezclados
@@ -55,9 +55,12 @@ export class Match {
         dying: 0, rope: null, jet: 0, umbrella: false, hurtT: 0, backflip: 0,
       });
     }
-    // barriles y minas del mapa
+    // barriles, minas y detalles móviles de cada isla
     for (let b = 0; b < 4 && n < sp.length; b++) this.addObj({ kind: 'barril', x: sp[n].x, y: sp[n].y, z: sp[n++].z, hp: 1 });
     for (let b = 0; b < 3 && n < sp.length; b++) this.addObj({ kind: 'mina', x: sp[n].x, y: sp[n].y, z: sp[n++].z, armed: 1, t: 0 });
+    if (this.island === 'billar') {
+      for (let b = 0; b < 5 && n < sp.length; b++) this.addObj({ kind: 'bolaBillar', x: sp[n].x, y: sp[n].y, z: sp[n++].z });
+    }
     this.teamOrder = this.teams.map((t) => t.idx);
     this.turnTeam = -1;
     this.turn = null;
@@ -278,11 +281,13 @@ export class Match {
     if (this.turn) this.turn.canPick = false;
     if (ch.rope) { ch.rope = null; ch.air = true; ch.knock = false; ch.peakY = ch.y; this.emit({ k: 'sfx', s: 'jump' }); return; }
     if (!ch.ground || ch.air) return;
+    const onJelly = this.island === 'juguetes' && this.terrain.matUnder(ch.x, ch.y, ch.z) === M.C;
     const f = back ? -1.4 : 3.6;
-    ch.vx = Math.sin(ch.yaw) * f; ch.vz = Math.cos(ch.yaw) * f; ch.vy = back ? 9.5 : 6.8;
+    ch.vx = Math.sin(ch.yaw) * f; ch.vz = Math.cos(ch.yaw) * f;
+    ch.vy = (back ? 9.5 : 6.8) * (onJelly ? 1.35 : 1);
     ch.air = true; ch.ground = false; ch.knock = false; ch.peakY = ch.y;
     if (back) ch.backflip = 0.72;
-    this.emit({ k: 'sfx', s: back ? 'backflip' : 'jump', id: ch.id });
+    this.emit({ k: 'sfx', s: onJelly ? 'bounce' : (back ? 'backflip' : 'jump'), id: ch.id });
   }
 
   aimDir(ch, pitch) {
@@ -521,7 +526,12 @@ export class Match {
       const d = Math.hypot(o.x - x, o.y + 0.3 - y, o.z - z);
       if (d > RR) continue;
       if (o.kind === 'barril' || o.kind === 'cajaArma' || (o.kind === 'mina' && !o.proj)) { if (!o.fuseBoom) o.fuseBoom = 0.12 + this.r() * 0.15; }
-      else if (o.kind === 'vela' || o.kind === 'lapida' || o.kind === 'cajaSalud' || o.kind === 'cajaUtil') {
+      else if (o.kind === 'bolaBillar') {
+        const f = 1 - d / RR, n = d > 0.01 ? 1 / d : 0;
+        const push = (12 + dmg * 0.1) * f;
+        o.vx += (o.x - x) * n * push; o.vy += 2.8 * f; o.vz += (o.z - z) * n * push;
+        o.ground = false; o.owner = team;
+      } else if (o.kind === 'vela' || o.kind === 'lapida' || o.kind === 'cajaSalud' || o.kind === 'cajaUtil') {
         const f = 1 - d / RR, n = d > 0.01 ? 1 / d : 0;
         o.vx += (o.x - x) * n * 6 * f; o.vy += 5 * f; o.vz += (o.z - z) * n * 6 * f; o.ground = false;
       }
@@ -671,9 +681,11 @@ export class Match {
       ch.yaw -= mx * TURN * dt;
       if (my) {
         T.canPick = false;
-        const sp = (my > 0 ? WALK : WALK * 0.6) * my;
+        const mat = this.terrain.matUnder(ch.x, ch.y, ch.z);
+        const slow = this.island === 'banera' && mat === M.WHITE ? 0.42 : 1;
+        const sp = (my > 0 ? WALK : WALK * 0.6) * my * slow;
         this.walkStep(ch, Math.sin(ch.yaw) * sp * dt, Math.cos(ch.yaw) * sp * dt);
-        ch.walk += dt; ch.movingT = 0.15;
+        ch.walk += dt * slow; ch.movingT = 0.15;
       }
     }
   }
@@ -754,11 +766,20 @@ export class Match {
         if (hit.y) {
           if (before < 0) {
             const speed = Math.hypot(c.vx, before, c.vz);
-            if (c.knock && speed > 5.5) {
+            const mat = this.terrain.matUnder(c.x, c.y, c.z);
+            const onJelly = this.island === 'juguetes' && mat === M.C;
+            if (onJelly && before < -3.2) {
+              c.vy = Math.min(11.5, Math.max(6.2, -before * 0.8));
+              c.vx = (c.vx || Math.sin(c.yaw) * 1.8) * 0.85;
+              c.vz = (c.vz || Math.cos(c.yaw) * 1.8) * 0.85;
+              c.peakY = c.y;
+              this.emit({ k: 'sfx', s: 'bounce' });
+            } else if (c.knock && speed > 5.5) {
               c.vy = -before * 0.32; c.vx *= 0.55; c.vz *= 0.55;
               this.emit({ k: 'sfx', s: 'bounce' });
             } else {
-              const fall = c.peakY - c.y;
+              const softSand = this.island === 'arenero' && mat === M.E;
+              const fall = (onJelly || softSand) ? 0 : (c.peakY - c.y);
               c.vx = 0; c.vy = 0; c.vz = 0;
               c.air = false; c.ground = true; c.knock = false; c.umbrella = false; c.backflip = 0;
               if (fall > 3.6 && c.jet <= 0) {
@@ -879,14 +900,62 @@ export class Match {
 
   stepStatic(o, dt) {
     // gravedad y piso (cajas con sombrilla caen despacio)
-    const r = o.kind === 'mina' ? 0.25 : 0.3;
+    const r = o.kind === 'mina' ? 0.25 : o.kind === 'bolaBillar' ? 0.38 : 0.3;
     if (!o.ground || !this.onGround(o, r)) {
       o.ground = false;
       o.vy -= GRAVITY * dt;
       if (o.para && o.vy < -2.2) o.vy = -2.2;
       const hit = this.moveBox(o, o.vx * dt, o.vy * dt, o.vz * dt, r, 0.5);
-      if (hit.x) o.vx = 0; if (hit.z) o.vz = 0;
-      if (hit.y && o.vy < 0) { o.vy = 0; o.vx = 0; o.vz = 0; o.ground = true; o.para = false; }
+      if (o.kind === 'bolaBillar') {
+        if (hit.x) o.vx *= -0.7;
+        if (hit.z) o.vz *= -0.7;
+        if (hit.y && o.vy < 0) {
+          if (o.vy < -3.5) o.vy *= -0.35;
+          else { o.vy = 0; o.ground = true; }
+        }
+      } else {
+        if (hit.x) o.vx = 0; if (hit.z) o.vz = 0;
+        if (hit.y && o.vy < 0) { o.vy = 0; o.vx = 0; o.vz = 0; o.ground = true; o.para = false; }
+      }
+    } else if (o.kind === 'bolaBillar' && (Math.abs(o.vx) > 0.05 || Math.abs(o.vz) > 0.05)) {
+      const hit = this.moveBox(o, o.vx * dt, 0, o.vz * dt, r, 0.6);
+      if (hit.x || hit.z) {
+        let stepped = false;
+        if (!this.boxSolid(o.x + (hit.x ? o.vx * dt : 0) - r, o.y + VOX * 0.6, o.z + (hit.z ? o.vz * dt : 0) - r, o.x + (hit.x ? o.vx * dt : 0) + r, o.y + VOX * 0.6 + 0.6, o.z + (hit.z ? o.vz * dt : 0) + r)) {
+          o.y += VOX * 0.6;
+          this.moveBox(o, hit.x ? o.vx * dt : 0, 0, hit.z ? o.vz * dt : 0, r, 0.6);
+          stepped = true;
+        }
+        if (!stepped) {
+          if (hit.x) o.vx *= -0.7;
+          if (hit.z) o.vz *= -0.7;
+        }
+      }
+      if (!this.onGround(o, r)) {
+        for (let d = 0.1; d <= 0.6; d += 0.1) {
+          if (this.onGround({ x: o.x, y: o.y - d, z: o.z }, r)) { o.y -= d; break; }
+        }
+      }
+      const drag = Math.max(0, 1 - 1.35 * dt);
+      o.vx *= drag; o.vz *= drag;
+      if (Math.hypot(o.vx, o.vz) < 0.12) { o.vx = 0; o.vz = 0; }
+    }
+    if (o.kind === 'bolaBillar') {
+      if (o.hitCd > 0) o.hitCd = Math.max(0, o.hitCd - dt);
+      const sp = Math.hypot(o.vx, o.vz);
+      if (sp > 0.15) o.yaw = Math.atan2(o.vx, o.vz);
+      if (sp > 2.0 && !o.hitCd) {
+        for (const c of this.chickens) {
+          if (!c.alive) continue;
+          if (Math.hypot(c.x - o.x, c.z - o.z) < R + 0.4 && Math.abs((c.y + 0.4) - (o.y + 0.35)) < 1.0) {
+            this.knock(c, o.vx * 0.85, 5.5, o.vz * 0.85);
+            this.damage(c, Math.min(25, sp * 2.4), o.owner);
+            o.vx *= -0.45; o.vz *= -0.45; o.hitCd = 0.45;
+            this.emit({ k: 'sfx', s: 'bounce' });
+            break;
+          }
+        }
+      }
     }
     if (o.y < this.water - 0.2) {
       o.dead = true;

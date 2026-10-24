@@ -41,6 +41,7 @@ export const THEMES = {
       for (const s of spots(t, r, 2, 18)) { // pala
         t.box(s.i, s.j, s.k, 1, 9, 1, M.B); t.box(s.i - 1, s.j + 9, s.k - 2, 3, 1, 5, M.B);
       }
+      for (const s of spots(t, r, 4, 12)) t.cylinder(s.i, s.j - 1, s.k, 3.5, 2, M.E); // montículos de arena blanda (amortiguan caídas)
     },
   },
   banera: {
@@ -57,6 +58,7 @@ export const THEMES = {
       }
       for (const s of spots(t, r, 4, 14)) t.box(s.i - 3, s.j, s.k - 2, 7, 3, 5, M.C); // jabón
       for (const s of spots(t, r, 6, 10)) t.sphere(s.i, s.j + 1, s.k, 2 + r() * 2, M.WHITE); // espuma
+      for (const s of spots(t, r, 5, 10)) t.cylinder(s.i, s.j - 1, s.k, 3.5, 2, M.WHITE); // alfombras de espuma que frenan
     },
   },
   cocina: {
@@ -71,6 +73,11 @@ export const THEMES = {
       }
       const sp = spots(t, r, 1, 10, 20)[0]; // cuchara de metal (no se rompe)
       if (sp) { t.box(sp.i - 8, sp.j, sp.k, 12, 1, 1, M.METAL); t.sphere(sp.i + 6, sp.j + 0.5, sp.k + 0.5, 2.5, M.METAL, 0.5); }
+      for (const s of spots(t, r, 4, 14)) { // imanes de nevera (metal que no se rompe)
+        t.box(s.i - 2, s.j, s.k - 1, 2, 5, 2, M.METAL);
+        t.box(s.i + 1, s.j, s.k - 1, 2, 5, 2, M.METAL);
+        t.box(s.i - 2, s.j + 4, s.k - 1, 5, 2, 2, M.METAL);
+      }
       for (const s of spots(t, r, 2, 18)) { // taza
         t.cylinder(s.i, s.j, s.k, 4, 7, (i, j, k) => ((i - s.i) ** 2 + (k - s.k) ** 2 > 2.8 * 2.8 || j === s.j ? M.E : AIR));
       }
@@ -82,14 +89,17 @@ export const THEMES = {
     sky: ['#7b6cff', '#d6d1ff'], water: '#3ab0ff', fog: '#d3cdff',
     waterVox: 7, maxH: 13, hill: 6, curve: 0.65, terraces: 4, blobs: [2, 3], tunnels: 2, song: 4,
     decorate(t, r) {
-      const cols = [M.A, M.B, M.C, M.D, M.E];
+      const cols = [M.A, M.B, M.D, M.E];
       for (const s of spots(t, r, 5, 12)) { // bloques apilados
         let j = s.j;
         const n = 1 + Math.floor(r() * 3);
         for (let b = 0; b < n; b++) { const o = Math.floor(r() * 3) - 1; t.box(s.i - 2 + o, j, s.k - 2 + o, 5, 5, 5, cols[Math.floor(r() * cols.length)]); j += 5; }
       }
+      for (const s of spots(t, r, 5, 11)) { // bloques de gelatina verde (M.C) que hacen rebotar
+        t.box(s.i - 3, s.j - 1, s.k - 3, 6, 3, 6, M.C);
+      }
       for (const s of spots(t, r, 2, 18)) t.sphere(s.i, s.j + 4, s.k, 4.5, (i, j) => (j < s.j + 4 ? M.A : M.WHITE)); // pelota
-      for (const s of spots(t, r, 3, 14)) { const c = cols[Math.floor(r() * 5)]; t.box(s.i, s.j, s.k - 5, 2, 2, 10, c); t.box(s.i, s.j, s.k + 5, 2, 2, 1, M.WHITE); } // crayón
+      for (const s of spots(t, r, 3, 14)) { const c = cols[Math.floor(r() * cols.length)]; t.box(s.i, s.j, s.k - 5, 2, 2, 10, c); t.box(s.i, s.j, s.k + 5, 2, 2, 1, M.WHITE); } // crayón
     },
   },
   billar: {
@@ -122,6 +132,7 @@ export const THEMES = {
         t.box(s.i, s.j + h + 7, s.k, 1, 3, 1, M.C); t.box(s.i + 1, s.j + h + 9, s.k, 2, 1, 1, M.B);
       }
       for (const s of spots(t, r, 5, 12)) tree(t, s.i, s.j, s.k, r);
+      for (const s of spots(t, r, 3, 14)) t.box(s.i - 2, s.j, s.k - 1, 5, 4, 2, M.METAL); // escudos de hierro
     },
   },
 };

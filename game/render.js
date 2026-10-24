@@ -634,6 +634,12 @@ export class Renderer {
         if (o.kind === 'bazuca') m.rotation.x = Math.PI / 2;
       } else if (['granada', 'maiz', 'oro', 'pop'].includes(o.kind)) {
         m.rotation.x += dt * 8; m.rotation.z += dt * 5;
+      } else if (o.kind === 'bolaBillar') {
+        const dx = o.x - (it.lx ?? o.x), dz = o.z - (it.lz ?? o.z);
+        const d = Math.hypot(dx, dz);
+        it.lx = o.x; it.lz = o.z;
+        m.rotation.y = o.yaw;
+        if (d > 0.002) m.rotation.x += d / 0.38;
       } else m.rotation.y = o.yaw;
       if (o.kind === 'gallina') m.position.y += Math.abs(Math.sin(this.time * 14)) * 0.12;
       if (o.kind === 'paloma') m.scale.y = 1.4 * (1 + Math.sin(this.time * 20) * 0.3);

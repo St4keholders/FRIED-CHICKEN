@@ -4,6 +4,7 @@ import { Match } from '../game/match.js';
 import { CpuBrain } from '../game/ai.js';
 import { DEFAULT_CFG, WEAPONS } from '../game/constants.js';
 import { ISLAND_IDS } from '../game/islands.js';
+import { M } from '../game/terrain.js';
 
 const dt = 1 / 60;
 const mkTeams = (cpu) => [0, 1].map((i) => ({ id: 't' + i, name: 'T' + i, color: '#f00', dark: '#800', acc: 'casco', cpu, slots: cpu === null ? [i] : [], alliance: 't' + i, names: ['a', 'b', 'c', 'd'] }));
@@ -152,6 +153,66 @@ for (const w of WEAPONS) {
   const allOk = visorOn && visorConsumed && trapBoom && fireDmgOk;
   if (!allOk) fails++;
   console.log(`${allOk ? 'OK ' : 'MAL'} cajas trampa, utilidad Visor y fuego de barril (5 daño/s)`);
+}
+
+// 8) detalles propios de cada isla (espuma en bañera, bolas de billar, imanes de nevera en cocina, gelatina en juguetes)
+{
+  // Bañera: espuma (M.WHITE) frena al caminar
+  const mb = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 111, island: 'banera' });
+  while (mb.phase !== 'play') mb.update(dt);
+  const cb = mb.activeChicken();
+  cb.yaw = Math.PI / 2;
+  const jt = mb.terrain.topAt(54, 60);
+  mb.terrain.box(50, jt - 2, 56, 12, 4, 8, M.A);
+  cb.x = 27; cb.z = 30; cb.y = mb.terrain.surfaceY(27, 30); cb.vx = cb.vy = cb.vz = 0; cb.air = false; cb.ground = true;
+  mb.control({ mx: 0, my: 1, fire: false });
+  for (let i = 0; i < 20; i++) mb.playerStep(dt);
+  const distNormal = cb.x - 27;
+
+  mb.terrain.box(50, jt - 2, 56, 12, 4, 8, M.WHITE);
+  cb.x = 27; cb.z = 30; cb.y = mb.terrain.surfaceY(27, 30); cb.vx = cb.vy = cb.vz = 0; cb.air = false; cb.ground = true;
+  for (let i = 0; i < 20; i++) mb.playerStep(dt);
+  const distFoam = cb.x - 27;
+  const foamSlowOk = distFoam > 0.05 && distFoam < distNormal * 0.65;
+
+  // Billar: bolas de billar ruedan cuando una explosión las empuja
+  const mbi = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 222, island: 'billar' });
+  while (mbi.phase !== 'play') mbi.update(dt);
+  const ball = mbi.objs.find((o) => o.kind === 'bolaBillar');
+  const bx0 = ball ? ball.x : 0;
+  if (ball) {
+    mbi.explode(ball.x - 2.0, ball.y, ball.z, 3.5, 20, 8, false);
+    for (let i = 0; i < 25; i++) mbi.stepStatic(ball, dt);
+  }
+  const ballRollOk = !!(ball && (ball.x - bx0) > 0.5);
+
+  // Cocina: imanes de nevera (M.METAL) no se rompen con explosiones
+  const mc = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 333, island: 'cocina' });
+  let mid = -1, mi = 0, mj0 = 0, mk = 0;
+  for (let j = 10; j < 40 && mid < 0; j++)
+    for (let k = 10; k < 80 && mid < 0; k++)
+      for (let i = 10; i < 80 && mid < 0; i++) {
+        const id = mc.terrain.idx(i, j, k);
+        if (mc.terrain.v[id] === M.METAL && mc.terrain.d[id] > 140) { mid = id; mi = i; mj0 = j; mk = k; }
+      }
+  const denBefore = mid >= 0 ? mc.terrain.d[mid] : 0;
+  mc.terrain.carve(mi * 0.5, mj0 * 0.5, mk * 0.5, 3.0, false);
+  const denAfter = mid >= 0 ? mc.terrain.d[mid] : -1;
+  const magnetUnbreakableOk = mid >= 0 && denBefore > 140 && denAfter === denBefore;
+
+  // Juguetes: bloques de gelatina (M.C) hacen rebotar
+  const mj = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 444, island: 'juguetes' });
+  while (mj.phase !== 'play') mj.update(dt);
+  const cj = mj.activeChicken();
+  mj.terrain.box(58, 22, 58, 12, 8, 12, M.C);
+  const sy = mj.terrain.surfaceY(32, 32);
+  cj.x = 32; cj.z = 32; cj.y = sy + 0.05; cj.vx = 0; cj.vy = -8; cj.vz = 0; cj.air = true; cj.ground = false; cj.peakY = sy + 2;
+  mj.physics(dt);
+  const jellyBounceOk = cj.vy > 4 && cj.air === true;
+
+  const t11Ok = foamSlowOk && ballRollOk && magnetUnbreakableOk && jellyBounceOk;
+  if (!t11Ok) fails++;
+  console.log(`${t11Ok ? 'OK ' : 'MAL'} detalles de islas (espuma frena, bolas de billar ruedan, imanes irrompibles, gelatina rebota)`);
 }
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

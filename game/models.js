@@ -285,6 +285,12 @@ const BUILDERS = {
       P(g, 'cone', '#fff275', [x, h * 0.38, z], [r * 0.55, h * 0.65, r * 0.55], null, 'basic');
     });
   },
+  bolaBillar: (g) => {
+    P(g, 'sphere', '#e3172b', [0, 0.38, 0], 0.38, null, 'metal');
+    P(g, 'cyl', '#ffffff', [0, 0.38, 0], [0.39, 0.18, 0.39], null, 'metal');
+    P(g, 'sphere', '#ffffff', [0, 0.38, 0.36], [0.13, 0.13, 0.04]);
+    P(g, 'sphere', '#111111', [0, 0.38, 0.39], [0.05, 0.08, 0.02]);
+  },
 };
 
 export function makeObject(kind, scale = 1) {
@@ -300,4 +306,5 @@ export const PROJ_MODEL = {
   bazuca: 'egg', granada: 'granada', maiz: 'maiz', pop: 'pop', oro: 'oro', bomba: 'paloma', regalo: 'bomba',
   guacamaya: 'guacamaya', vela: 'vela', mina: 'mina', gallina: 'gallina', barril: 'barril',
   cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', lapida: 'lapida', fuego: 'fuego',
+  bolaBillar: 'bolaBillar',
 };

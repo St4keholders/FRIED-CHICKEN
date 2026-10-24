@@ -148,6 +148,23 @@ const tapFire = async (p, ms = 150) => {
       return { trapVis, fireVis, visorCount };
     });
     check(t10.trapVis && t10.fireVis && t10.visorCount > 5, 'aviso visual en caja trampa, trayectoria completa con Visor y fuego de barril en 3D');
+    const t11Host = await t.evaluate(() => {
+      const h = window.__fcHost;
+      const m = h.match;
+      const balls = m.objs.filter((o) => o.kind === 'bolaBillar' && !o.dead);
+      const b0 = balls[0];
+      if (!b0) return { count: 0, rolled: false };
+      const x0 = b0.x;
+      m.explode(b0.x - 2.0, b0.y, b0.z, 3.2, 10, 7, false);
+      for (let i = 0; i < 15; i++) m.stepStatic(b0, 1 / 60);
+      return { count: balls.length, rolled: Math.abs(b0.x - x0) > 0.3 };
+    });
+    const t11Phone = await p.evaluate(() => {
+      const mr = window.__fcMirror;
+      const v = mr && mr.view && mr.view();
+      return !!(v && v.objs && v.objs.some((o) => o.kind === 'bolaBillar'));
+    });
+    check(t11Host.count >= 3 && t11Host.rolled && t11Phone, `bolas de billar ruedan por explosión y se sincronizan con el celular ${JSON.stringify({ ...t11Host, t11Phone })}`);
     await t.evaluate(() => {
       if (window.__fcHost && window.__fcHost.match) {
         window.__fcHost.match.objs = [];
