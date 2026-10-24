@@ -49,12 +49,17 @@ function P(parent, geo, color, pos, scale, rot, kind) {
 const YEL = '#ffd23a', YEL2 = '#f6b820', BELLY = '#fff0a6', ORA = '#ff8a1f', BLK = '#1d1420', WHT = '#ffffff', PINK = '#ff9db5';
 
 function eyes(g, y = 1.05, z = 0.34, robot = false) {
+  const whites = [], pupils = [];
   for (const s of [-1, 1]) {
-    if (robot) { P(g, 'sphere', '#ff2244', [s * 0.12, y, z + 0.06], [0.07, 0.07, 0.03], null, 'glow'); continue; }
-    P(g, 'sphere', WHT, [s * 0.125, y, z], [0.13, 0.16, 0.1]);
-    P(g, 'sphere', BLK, [s * 0.11, y - 0.01, z + 0.075], [0.065, 0.08, 0.04]);
+    if (robot) {
+      whites.push(P(g, 'sphere', '#ff2244', [s * 0.12, y, z + 0.06], [0.07, 0.07, 0.03], null, 'glow'));
+      continue;
+    }
+    whites.push(P(g, 'sphere', WHT, [s * 0.125, y, z], [0.13, 0.16, 0.1]));
+    pupils.push(P(g, 'sphere', BLK, [s * 0.11, y - 0.01, z + 0.075], [0.065, 0.08, 0.04]));
     P(g, 'sphere', WHT, [s * 0.09, y + 0.03, z + 0.11], 0.022, null, 'basic');
   }
+  return { whites, pupils };
 }
 
 function accessory(g, acc, team) {
@@ -98,6 +103,10 @@ function accessory(g, acc, team) {
     case 'zorro':
       for (const s of [-1, 1]) P(g, 'cone', '#ff7a1a', [s * 0.17, 1.33, 0], [0.09, 0.2, 0.06], [0, 0, -s * 0.25]);
       P(g, 'torus', '#ff7a1a', [0, 1.16, 0.05], [0.33, 0.33, 0.2], [Math.PI / 2, 0, 0]);
+      // Monóculo dorado en el ojo izquierdo del Zorro Rufo
+      P(g, 'torus', '#ffd700', [-0.13, 1.05, 0.43], [0.09, 0.09, 0.14], [Math.PI / 2, 0, 0], 'metal');
+      P(g, 'cyl', '#ffd700', [-0.04, 1.06, 0.42], [0.015, 0.08, 0.015], [0, 0, Math.PI / 3], 'metal');
+      P(g, 'sphere', '#5ff0ff', [-0.13, 1.05, 0.42], [0.07, 0.07, 0.02], null, 'glow');
       break;
     case 'casco':
     default:
@@ -111,8 +120,10 @@ function accessory(g, acc, team) {
   }
 }
 
-function buildChicken(team, acc, robot) {
+function buildChicken(team, acc, robot, opts = {}) {
   const g = new THREE.Group();
+  const head = new THREE.Group();
+  const wings = [];
   const dark = shade(team, 0.7);
   if (robot) {
     const MET = '#c3ccd6', MET2 = '#8d99a6';
@@ -120,38 +131,58 @@ function buildChicken(team, acc, robot) {
     P(g, 'sphere', MET, [0, 0.47, 0], [0.46, 0.45, 0.46], null, 'metal');
     P(g, 'cyl', MET2, [0, 0.47, 0], [0.47, 0.06, 0.47], null, 'metal');
     P(g, 'sphere', '#ffcc00', [0, 0.45, 0.42], [0.1, 0.1, 0.05], null, 'glow');
-    for (const s of [-1, 1]) P(g, 'sphere', MET2, [s * 0.46, 0.5, 0], [0.09, 0.22, 0.18], [0, 0, s * 0.25], 'metal');
-    P(g, 'sphere', MET, [0, 0.98, 0.06], 0.35, null, 'metal');
-    P(g, 'rbox', '#18222c', [0, 1.03, 0.3], [0.42, 0.16, 0.12]);
-    eyes(g, 1.03, 0.3, true);
-    P(g, 'cone', '#ff9a3c', [0, 0.92, 0.44], [0.08, 0.18, 0.08], [Math.PI / 2, 0, 0], 'metal');
-    P(g, 'cyl', MET2, [0, 1.42, 0.06], [0.025, 0.2, 0.025], null, 'metal');
-    P(g, 'sphere', '#ff2244', [0, 1.55, 0.06], 0.06, null, 'glow');
-    for (const s of [-1, 1]) P(g, 'sphere', MET2, [s * 0.33, 1.0, 0.06], [0.04, 0.07, 0.07], null, 'metal');
+    for (const s of [-1, 1]) wings.push(P(g, 'sphere', MET2, [s * 0.46, 0.5, 0], [0.09, 0.22, 0.18], [0, 0, s * 0.25], 'metal'));
+    P(head, 'sphere', MET, [0, 0.98, 0.06], 0.35, null, 'metal');
+    P(head, 'rbox', '#18222c', [0, 1.03, 0.3], [0.42, 0.16, 0.12]);
+    const { whites, pupils } = eyes(head, 1.03, 0.3, true);
+    const beakTop = P(head, 'cone', '#ff9a3c', [0, 0.92, 0.44], [0.08, 0.18, 0.08], [Math.PI / 2, 0, 0], 'metal');
+    P(head, 'cyl', MET2, [0, 1.42, 0.06], [0.025, 0.2, 0.025], null, 'metal');
+    P(head, 'sphere', '#ff2244', [0, 1.55, 0.06], 0.06, null, 'glow');
+    for (const s of [-1, 1]) P(head, 'sphere', MET2, [s * 0.33, 1.0, 0.06], [0.04, 0.07, 0.07], null, 'metal');
+    g.add(head);
     P(g, 'torus', team, [0, 0.78, 0.02], [0.31, 0.31, 0.3], [Math.PI / 2, 0, 0]);
     P(g, 'sphere', dark, [0, 0.72, 0.31], 0.07);
+
+    if (opts.shield) {
+      // Escudo blindado de hierro reforzado con remaches para el Sargento Lata
+      const sg = new THREE.Group();
+      P(sg, 'rbox', '#718096', [0, 0.5, 0.52], [0.72, 0.68, 0.1], null, 'metal');
+      P(sg, 'rbox', '#2d3748', [0, 0.5, 0.55], [0.76, 0.08, 0.12], null, 'metal');
+      P(sg, 'rbox', '#2d3748', [0, 0.5, 0.55], [0.08, 0.72, 0.12], null, 'metal');
+      for (const [rx, ry] of [[-0.3, 0.26], [0.3, 0.26], [-0.3, 0.74], [0.3, 0.74]]) {
+        P(sg, 'sphere', '#ffd23f', [rx, ry, 0.56], 0.04, null, 'metal');
+      }
+      P(sg, 'cyl', '#9aa7b4', [0, 0.5, 0.57], [0.15, 0.04, 0.15], [Math.PI / 2, 0, 0], 'metal');
+      P(sg, 'sphere', '#ff2b3a', [0, 0.5, 0.59], 0.065, null, 'glow');
+      g.add(sg);
+      g.userData.shieldGroup = sg;
+    }
+
+    g.userData = { head, wings, eyes: whites, pupils, beakTop, beakLow: null, robot: true };
     return g;
   }
   for (const s of [-1, 1]) P(g, 'sphere', ORA, [s * 0.17, 0.035, 0.1], [0.12, 0.05, 0.17]);
   P(g, 'sphere', YEL, [0, 0.47, 0], [0.47, 0.44, 0.47]);
   P(g, 'sphere', BELLY, [0, 0.42, 0.28], [0.32, 0.28, 0.2]);
-  for (const s of [-1, 1]) P(g, 'sphere', YEL2, [s * 0.45, 0.5, -0.02], [0.1, 0.24, 0.2], [0, 0, s * 0.35]);
+  for (const s of [-1, 1]) wings.push(P(g, 'sphere', YEL2, [s * 0.45, 0.5, -0.02], [0.1, 0.24, 0.2], [0, 0, s * 0.35]));
   P(g, 'cone', YEL2, [0, 0.62, -0.45], [0.09, 0.22, 0.09], [-2.1, 0, 0]);
-  P(g, 'sphere', YEL, [0, 0.98, 0.06], 0.36);
-  eyes(g);
-  P(g, 'cone', ORA, [0, 0.93, 0.47], [0.1, 0.22, 0.08], [Math.PI / 2, 0, 0]);
-  P(g, 'cone', '#e06a10', [0, 0.88, 0.43], [0.07, 0.14, 0.05], [Math.PI / 2 + 0.2, 0, 0]);
-  for (const s of [-1, 1]) P(g, 'sphere', PINK, [s * 0.24, 0.9, 0.29], [0.06, 0.04, 0.03]);
+  P(head, 'sphere', YEL, [0, 0.98, 0.06], 0.36);
+  const { whites, pupils } = eyes(head);
+  const beakTop = P(head, 'cone', ORA, [0, 0.93, 0.47], [0.1, 0.22, 0.08], [Math.PI / 2, 0, 0]);
+  const beakLow = P(head, 'cone', '#e06a10', [0, 0.88, 0.43], [0.07, 0.14, 0.05], [Math.PI / 2 + 0.2, 0, 0]);
+  for (const s of [-1, 1]) P(head, 'sphere', PINK, [s * 0.24, 0.9, 0.29], [0.06, 0.04, 0.03]);
+  accessory(head, acc, team);
+  g.add(head);
   P(g, 'torus', team, [0, 0.77, 0.02], [0.32, 0.32, 0.3], [Math.PI / 2, 0, 0]);
   P(g, 'sphere', dark, [0, 0.71, 0.31], [0.08, 0.07, 0.06]);
-  accessory(g, acc, team);
+  g.userData = { head, wings, eyes: whites, pupils, beakTop, beakLow, robot: false };
   return g;
 }
 
 // pollito listo para la escena: grupo con el cuerpo (que se anima) y el arma
-export function makeChicken(team, acc, robot) {
+export function makeChicken(team, acc, robot, opts = {}) {
   const root = new THREE.Group();
-  const body = buildChicken(team, acc, robot);
+  const body = buildChicken(team, acc, robot, opts);
   root.add(body);
   const gun = new THREE.Group();
   P(gun, 'cyl', '#5d6873', [0, 0, 0.22], [0.075, 0.62, 0.075], [Math.PI / 2, 0, 0], 'metal');
@@ -160,7 +191,7 @@ export function makeChicken(team, acc, robot) {
   gun.position.set(-0.42, 0.6, 0.12);
   gun.visible = false;
   root.add(gun);
-  root.userData = { body, gun };
+  root.userData = { body, gun, ...body.userData };
   root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return root;
 }
@@ -266,6 +297,39 @@ const BUILDERS = {
     P(g, 'rbox', '#8d99a6', [0, 0.36, 0.085], [0.05, 0.24, 0.02]);
     P(g, 'rbox', '#8d99a6', [0, 0.4, 0.085], [0.16, 0.05, 0.02]);
   },
+  fuego: (g) => {
+    P(g, 'sphere', '#ff5a1f', [0, 0.06, 0], [0.95, 0.08, 0.95], null, 'glow');
+    const pts = [[0, 0, 0.34, 0.62], [-0.45, 0.2, 0.24, 0.45], [0.45, -0.15, 0.26, 0.5], [0.1, -0.45, 0.22, 0.42], [-0.25, -0.35, 0.2, 0.38], [0.28, 0.38, 0.22, 0.44]];
+    pts.forEach(([x, z, r, h], i) => {
+      P(g, 'cone', i % 2 ? '#ff5a1f' : '#ffb020', [x, h * 0.5, z], [r, h, r], null, 'basic');
+      P(g, 'cone', '#fff275', [x, h * 0.38, z], [r * 0.55, h * 0.65, r * 0.55], null, 'basic');
+    });
+  },
+  bolaBillar: (g) => {
+    P(g, 'sphere', '#e3172b', [0, 0.38, 0], 0.38, null, 'metal');
+    P(g, 'cyl', '#ffffff', [0, 0.38, 0], [0.39, 0.18, 0.39], null, 'metal');
+    P(g, 'sphere', '#ffffff', [0, 0.38, 0.36], [0.13, 0.13, 0.04]);
+    P(g, 'sphere', '#111111', [0, 0.38, 0.39], [0.05, 0.08, 0.02]);
+  },
+  cajaHuevo: (g) => {
+    // Pedestal de terciopelo con cinta dorada y huevito dorado resplandeciente
+    P(g, 'rbox', '#8a1c24', [0, 0.16, 0], [0.62, 0.32, 0.62]);
+    P(g, 'rbox', '#ffd23f', [0, 0.16, 0], [0.65, 0.08, 0.65], null, 'metal');
+    P(g, 'sphere', '#ffe066', [0, 0.52, 0], [0.24, 0.34, 0.24], null, 'glow');
+    for (const [x, z] of [[-0.24, -0.24], [0.24, -0.24], [-0.24, 0.24], [0.24, 0.24]]) {
+      P(g, 'sphere', '#ffffff', [x, 0.33, z], 0.04);
+    }
+  },
+  maquinaLata: (g) => {
+    // Máquina de hojalata del zorro: chasis metálico, chimenea con humo y compuerta
+    P(g, 'rbox', '#4a5568', [0, 0.1, 0], [0.92, 0.2, 0.92], null, 'metal');
+    P(g, 'rbox', '#9aa7b4', [0, 0.52, 0], [0.84, 0.82, 0.84], null, 'metal');
+    P(g, 'cyl', '#4a5568', [0.24, 1.05, -0.2], [0.11, 0.42, 0.11], null, 'metal');
+    P(g, 'sphere', '#ff2b3a', [-0.22, 0.98, 0.2], 0.11, null, 'glow');
+    P(g, 'cyl', '#ffd23f', [0, 0.58, 0.43], [0.2, 0.08, 0.2], [Math.PI / 2, 0, 0], 'metal');
+    P(g, 'rbox', '#1a202c', [0, 0.26, 0.43], [0.36, 0.2, 0.08]);
+    P(g, 'rbox', '#ff9f1a', [0, 0.82, 0.43], [0.5, 0.09, 0.04]);
+  },
 };
 
 export function makeObject(kind, scale = 1) {
@@ -280,5 +344,6 @@ export function makeObject(kind, scale = 1) {
 export const PROJ_MODEL = {
   bazuca: 'egg', granada: 'granada', maiz: 'maiz', pop: 'pop', oro: 'oro', bomba: 'paloma', regalo: 'bomba',
   guacamaya: 'guacamaya', vela: 'vela', mina: 'mina', gallina: 'gallina', barril: 'barril',
-  cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', lapida: 'lapida',
+  cajaArma: 'cajaArma', cajaSalud: 'cajaSalud', cajaUtil: 'cajaUtil', cajaHuevo: 'cajaHuevo', maquinaLata: 'maquinaLata',
+  lapida: 'lapida', fuego: 'fuego', bolaBillar: 'bolaBillar',
 };

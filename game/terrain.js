@@ -76,6 +76,18 @@ export class Terrain {
     if (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return false;
     return this.d[(j * NZ + k) * NX + i] >= ISO;
   }
+  // material del suelo debajo de (x, y, z)
+  matUnder(x, y, z) {
+    const i = Math.floor(x / VOX), k = Math.floor(z / VOX);
+    if (i < 0 || k < 0 || i >= NX || k >= NZ) return AIR;
+    const jTop = Math.min(NY - 1, Math.floor((y + 0.35) / VOX));
+    const jBot = Math.max(0, Math.floor((y - 0.9) / VOX));
+    for (let j = jTop; j >= jBot; j--) {
+      const m = this.get(i, j, k);
+      if (m) return m;
+    }
+    return AIR;
+  }
   // altura lisa del suelo más alto en (x, z) en unidades del mundo (0 si no hay)
   surfaceY(x, z, fromY) {
     const i = Math.floor(x / VOX), k = Math.floor(z / VOX);
@@ -112,6 +124,7 @@ export class Terrain {
     }
     const nd = clamp8(ISO + sdf * K);
     if (nd > this.d[id]) { this.d[id] = nd; if (nd > 70) this.v[id] = m; }
+    else if (sdf > 0 && this.d[id] > 70) this.v[id] = m;
   }
 
   // explosión: quita una esfera lisa (el metal no se rompe)

@@ -1,6 +1,6 @@
 // Motor gráfico 3D con Three.js: isla, agua, cielo, pollitos, objetos, partículas, cámaras y etiquetas
 import * as THREE from 'three';
-import { NX, NY, NZ, VOX, WORLD_X, WORLD_Z, CHICKEN_H, weaponById } from './constants.js';
+import { NX, NY, NZ, VOX, WORLD_X, WORLD_Z, CHICKEN_H, PROJ_GRAVITY, weaponById } from './constants.js';
 import { TerrainMesh } from './mesher.js';
 import { makeChicken, makeObject, PROJ_MODEL } from './models.js';
 
@@ -166,6 +166,9 @@ export class Renderer {
     this.dots = [];
     const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false });
     for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), dotMat); d.visible = false; d.renderOrder = 9; this.scene.add(d); this.dots.push(d); }
+    this.visorDots = [];
+    const vDotMat = new THREE.MeshBasicMaterial({ color: 0x5ff0ff, transparent: true, opacity: 0.92, depthTest: false });
+    for (let i = 0; i < 28; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 4), vDotMat); d.visible = false; d.renderOrder = 9; this.scene.add(d); this.visorDots.push(d); }
     this.cursor = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.12, 6, 24), new THREE.MeshBasicMaterial({ color: 0xff3b3b }));
     ring.rotation.x = Math.PI / 2;
@@ -209,30 +212,54 @@ export class Renderer {
 
   // ---------------- mundo ----------------
   // teams: [{ color, dark, acc, robot }]; chickens: [{ id, team, name }]
-  setWorld(terrain, teams, chickens) {
+  setWorld(terrain, teams, chickens, opts = {}) {
     this.clearWorld();
     this.terrain = terrain;
     const th = terrain.theme;
     this.theme = th;
-    this.scene.background = skyTexture(th.sky[0], th.sky[1]);
-    this.scene.fog = new THREE.Fog(th.fog, 70, 190);
-    this.hemi.color.set(th.sky[1]);
+    const look = (opts && opts.look) || terrain.look || 'dia';
+    let skyTop = th.sky[0], skyBot = th.sky[1], fogCol = th.fog;
+    let sunCol = 0xfff4e0, sunInt = 1.9, hemiCol = th.sky[1], hemiGround = 0x8a6a4a;
+    if (look === 'noche') {
+      skyTop = '#060a14';
+      skyBot = '#101a2e';
+      fogCol = '#0d182b';
+      sunCol = 0x8aa8d0;
+      sunInt = 1.0;
+      hemiCol = 0x3d5475;
+      hemiGround = 0x141a24;
+    } else if (look === 'atardecer') {
+      skyTop = '#3a1338';
+      skyBot = '#ff6b35';
+      fogCol = '#9e3d2a';
+      sunCol = 0xff9944;
+      sunInt = 1.75;
+      hemiCol = 0xff7b47;
+      hemiGround = 0x5a2d1d;
+    }
+    this.scene.background = skyTexture(skyTop, skyBot);
+    this.scene.fog = new THREE.Fog(fogCol, 70, 190);
+    this.hemi.color.set(hemiCol);
+    this.hemi.groundColor.set(hemiGround);
+    this.sun.color.set(sunCol);
+    this.sun.intensity = sunInt;
     this.tmesh = new TerrainMesh(terrain, this.scene, { shadows: this.shadows });
     // agua con olas
     const wg = new THREE.PlaneGeometry(320, 320, 56, 56);
     wg.rotateX(-Math.PI / 2);
     this.waterGeo = wg;
     this.waterBase = Float32Array.from(wg.attributes.position.array);
-    this.water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: th.water, transparent: true, opacity: 0.82, shininess: 90, specular: 0x666666 }));
+    const waterCol = look === 'noche' ? 0x102035 : look === 'atardecer' ? 0x6e2c38 : th.water;
+    this.water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: waterCol, transparent: true, opacity: 0.82, shininess: 90, specular: 0x666666 }));
     this.water.receiveShadow = this.shadows;
     this.water.position.set(WORLD_X / 2, th.waterVox * VOX, WORLD_Z / 2);
     this.scene.add(this.water);
-    this.seabed = new THREE.Mesh(new THREE.PlaneGeometry(320, 320).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(th.water).multiplyScalar(0.45) }));
+    this.seabed = new THREE.Mesh(new THREE.PlaneGeometry(320, 320).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(waterCol).multiplyScalar(0.45) }));
     this.seabed.position.set(WORLD_X / 2, 0.02, WORLD_Z / 2);
     this.scene.add(this.seabed);
     // montañas lejanas entre la neblina
     this.far = new THREE.Group();
-    const fm = new THREE.MeshLambertMaterial({ color: new THREE.Color(th.fog).lerp(new THREE.Color(th.palette[1]), 0.35) });
+    const fm = new THREE.MeshLambertMaterial({ color: new THREE.Color(fogCol).lerp(new THREE.Color(th.palette[1]), look === 'noche' ? 0.15 : 0.35) });
     const fg = new THREE.SphereGeometry(1, 20, 12);
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2 + Math.random() * 0.2;
@@ -245,7 +272,9 @@ export class Renderer {
     this.scene.add(this.far);
     // nubes redondas
     this.clouds = new THREE.Group();
-    const cm = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xb8c4d0 });
+    const cloudColor = look === 'noche' ? '#1c2838' : look === 'atardecer' ? '#ffc299' : 0xffffff;
+    const cloudEmissive = look === 'noche' ? '#0d141e' : look === 'atardecer' ? '#803a22' : 0xb8c4d0;
+    const cm = new THREE.MeshLambertMaterial({ color: cloudColor, emissive: cloudEmissive });
     const cg = new THREE.SphereGeometry(1, 16, 10);
     for (let i = 0; i < 9; i++) {
       const c = new THREE.Group();
@@ -265,20 +294,24 @@ export class Renderer {
     this.teamsMeta = teams;
     for (const c of chickens) {
       const t = teams[c.team];
-      const obj = makeChicken(t.color, t.acc, t.robot);
+      const scale = c.scale || (t && t.boss ? (t.boss.scale || 1.7) : 1);
+      const shield = c.shield || !!(t && t.boss && t.boss.shield);
+      const obj = makeChicken(t.color, t.acc, t.robot, { shield });
+      obj.scale.setScalar(scale);
       this.scene.add(obj);
       const sh = new THREE.Mesh(this.shadowGeo, this.shadowMat);
       sh.rotation.x = -Math.PI / 2;
+      sh.scale.setScalar(scale);
       this.scene.add(sh);
-      const umb = makeObject('sombrilla', 0.75);
-      umb.position.y = 2.0; umb.visible = false;
+      const umb = makeObject('sombrilla', 0.75 * scale);
+      umb.position.y = 2.0 * scale; umb.visible = false;
       obj.add(umb);
       const lbl = document.createElement('div');
       lbl.className = 'lbl';
       lbl.style.setProperty('--tc', t.color);
       lbl.innerHTML = `<span class="ln"></span><span class="lh"></span>`;
       this.overlay.appendChild(lbl);
-      this.chickens.set(c.id, { obj, sh, umb, lbl, name: c.name, team: c.team, hp: -1, shown: false });
+      this.chickens.set(c.id, { obj, sh, umb, lbl, name: c.name, team: c.team, scale, shield, hp: -1, shown: false });
       lbl.querySelector('.ln').textContent = c.name;
     }
     this.marker = document.createElement('div');
@@ -310,6 +343,22 @@ export class Renderer {
     if (i < 0 || k < 0 || i >= NX || k >= NZ) return -100;
     for (let j = Math.min(NY - 1, Math.floor((y + 0.1) / VOX)); j >= 0; j--) if (t.get(i, j, k)) return (j + 1) * VOX;
     return -100;
+  }
+
+  // comprueba si un rayo entre 'a' (pollito) y 'b' (cámara) choca con el terreno
+  rayBlocked(a, b) {
+    const t = this.terrain;
+    if (!t) return false;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 0.8) return false;
+    const steps = Math.ceil(dist / 0.35);
+    const s0 = Math.max(1, Math.ceil((0.65 / dist) * steps));
+    for (let s = s0; s <= steps; s++) {
+      const u = s / steps;
+      if (t.solid(a.x + dx * u, a.y + dy * u, a.z + dz * u)) return true;
+    }
+    return false;
   }
 
   project(x, y, z) {
@@ -427,6 +476,8 @@ export class Renderer {
 
     const T = v.turn;
     const active = T ? T.ch : -1;
+    const ach = v.chickens.find((s) => s.id === active);
+    const isFp = !!(v.cam && v.cam.m === 'fp');
     // pollitos
     for (const s of v.chickens) {
       const c = this.chickens.get(s.id);
@@ -435,22 +486,117 @@ export class Renderer {
       const vis = s.alive || s.dying;
       obj.visible = !!vis; sh.visible = !!vis;
       if (!vis) { c.lbl.style.display = 'none'; continue; }
+      const sc = s.scale || c.scale || 1;
+      obj.scale.setScalar(sc);
       let ry = s.y;
       if (!s.air) { const gy0 = this.terrain.surfaceY(s.x, s.z, s.y + 0.7); if (Math.abs(gy0 - s.y) < 0.5) ry = gy0; }
       obj.position.set(s.x, ry, s.z);
       obj.rotation.y = s.yaw;
-      const body = obj.userData.body;
+      const { body, gun, head, wings, eyes, pupils, beakTop, beakLow, robot } = obj.userData;
+      body.visible = !(isFp && s.id === active);
       const w = s.walking ? Math.sin(this.time * 14) : 0;
-      body.position.y = s.walking ? Math.abs(w) * 0.07 : 0;
-      body.rotation.z = s.walking ? w * 0.12 : Math.sin(this.time * 1.6 + s.id) * 0.02;
-      body.rotation.x = s.air && !s.rope ? -0.25 : 0;
+      const cheering = v.phase === 'over' && s.alive && !s.dying;
+      const nearMine = !!(v.objs && v.objs.some((o) => o.kind === 'mina' && Math.hypot(o.x - s.x, o.y - s.y, o.z - s.z) < 3.2));
+      const scared = !!(s.hurt || s.dying || nearMine);
+      c.scared = scared;
+      c.cheering = cheering;
+
+      // cuerpo: caminar, festejar o voltereta en salto atrás
+      if (s.backflip && s.air) {
+        if (!c.flipAct) { c.flipAct = true; c.flipT = 0.65; }
+      } else if (!s.air) {
+        c.flipAct = false;
+        c.flipT = 0;
+      }
+      if (c.flipT > 0 && s.air) {
+        c.flipT = Math.max(0, c.flipT - dt);
+        const prog = 1 - c.flipT / 0.65;
+        const ang = -prog * Math.PI * 2;
+        const cy = 0.52;
+        body.rotation.x = ang;
+        body.position.y = cy * (1 - Math.cos(ang));
+        body.position.z = -cy * Math.sin(ang);
+        body.rotation.z = 0;
+      } else if (cheering) {
+        const hop = Math.abs(Math.sin(this.time * 9 + s.id * 1.3));
+        body.position.y = hop * 0.28;
+        body.position.z = 0;
+        body.rotation.x = 0;
+        body.rotation.z = Math.sin(this.time * 4.5 + s.id) * 0.14;
+      } else {
+        body.position.y = s.walking ? Math.abs(w) * 0.07 : 0;
+        body.position.z = 0;
+        body.rotation.z = s.walking ? w * 0.12 : Math.sin(this.time * 1.6 + s.id) * 0.02;
+        body.rotation.x = s.air && !s.rope ? -0.25 : 0;
+      }
       const breathe = 1 + Math.sin(this.time * 2.4 + s.id * 1.7) * 0.015;
       body.scale.set(1, breathe, 1);
       if (s.dying) { const k = 1 + Math.sin(this.time * 30) * 0.08; body.scale.set(k, k, k); }
       if (s.hurt) body.position.x = Math.sin(this.time * 60) * 0.05; else body.position.x = 0;
+
+      // alas: aleteo al caer/volar, alas arriba al festejar o balanceo al caminar
+      if (wings && wings.length === 2) {
+        const baseZ = robot ? 0.25 : 0.35;
+        if (cheering) {
+          const wave = Math.sin(this.time * 16 + s.id) * 0.25;
+          wings[0].rotation.set(0, 0, -(2.15 + wave));
+          wings[1].rotation.set(0, 0, 2.15 + wave);
+          wings[0].position.y = wings[1].position.y = 0.66;
+        } else if (s.air && !s.rope) {
+          const flap = Math.sin(this.time * 32 + s.id) * 0.95;
+          wings[0].rotation.set(0, 0, -(0.55 + flap));
+          wings[1].rotation.set(0, 0, 0.55 + flap);
+          wings[0].position.y = wings[1].position.y = 0.55;
+        } else if (s.walking) {
+          wings[0].rotation.set(w * 0.25, 0, -baseZ);
+          wings[1].rotation.set(-w * 0.25, 0, baseZ);
+          wings[0].position.y = wings[1].position.y = 0.5;
+        } else {
+          wings[0].rotation.set(0, 0, -baseZ);
+          wings[1].rotation.set(0, 0, baseZ);
+          wings[0].position.y = wings[1].position.y = 0.5;
+        }
+      }
+
+      // cara de susto (ojos grandes, pico abierto) al recibir daño o cerca de una mina
+      if (eyes) {
+        for (const e of eyes) {
+          if (robot) e.scale.set(scared ? 0.1 : 0.07, scared ? 0.1 : 0.07, 0.03);
+          else e.scale.set(scared ? 0.18 : 0.13, scared ? 0.22 : 0.16, scared ? 0.13 : 0.1);
+        }
+      }
+      if (pupils) {
+        for (const p of pupils) p.scale.set(scared ? 0.05 : 0.065, scared ? 0.06 : 0.08, 0.045);
+      }
+      if (beakTop) {
+        beakTop.rotation.x = Math.PI / 2 - (scared ? 0.26 : 0);
+        beakTop.position.y = (robot ? 0.92 : 0.93) + (scared ? 0.025 : 0);
+      }
+      if (beakLow) {
+        beakLow.rotation.x = Math.PI / 2 + (scared ? 0.72 : 0.2);
+        beakLow.position.y = scared ? 0.82 : 0.88;
+      }
+
+      // cabeza: los pollitos quietos miran al pollito del turno
+      if (head) {
+        let targetHeadYaw = 0;
+        let targetHeadPitch = 0;
+        if (!cheering && s.id !== active && ach && ach.alive && !s.walking && !s.air && !s.dying) {
+          const dx = ach.x - s.x, dz = ach.z - s.z, dy = ach.y - s.y;
+          let dYaw = Math.atan2(dx, dz) - s.yaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          targetHeadYaw = Math.max(-1.1, Math.min(1.1, dYaw));
+          const dist = Math.hypot(dx, dz) || 1;
+          targetHeadPitch = Math.max(-0.35, Math.min(0.35, -Math.atan2(dy, dist) * 0.6));
+        }
+        const hk = Math.min(1, dt * 8);
+        head.rotation.y += (targetHeadYaw - head.rotation.y) * hk;
+        head.rotation.x += (targetHeadPitch - head.rotation.x) * hk;
+      }
+
       c.umb.visible = !!s.umbrella;
       // arma en la mano del pollito activo
-      const gun = obj.userData.gun;
       const wpn = T && s.id === active ? weaponById(T.weapon) : null;
       gun.visible = !!(wpn && (wpn.aim === 'power' || wpn.id === 'escopeta' || wpn.id === 'cuerda') && v.phase === 'play' && !s.rope && !s.jet);
       if (gun.visible) gun.rotation.x = -(T.pitch || 0);
@@ -458,14 +604,14 @@ export class Renderer {
       const gy = this.groundBelow(s.x, s.y + 0.2, s.z);
       sh.position.set(s.x, gy + 0.03, s.z);
       const hgt = Math.max(0, s.y - gy);
-      sh.scale.setScalar(Math.max(0.3, 1 - hgt * 0.08));
+      sh.scale.setScalar(sc * Math.max(0.3, 1 - hgt * 0.08));
       sh.visible = gy > -50 && !this.shadows;
       // jetpack
       if (s.jet && Math.random() < 0.8) this.parts.add({ x: s.x - Math.sin(s.yaw) * 0.4, y: s.y + 0.3, z: s.z - Math.cos(s.yaw) * 0.4, vx: 0, vy: -4, vz: 0, size: 0.16, color: Math.random() < 0.5 ? '#ffb020' : '#ff5a1f', life: 0.35, grav: 0, shrink: true });
       // etiqueta
       if (c.hp !== s.hp) { c.hp = s.hp; c.lbl.querySelector('.lh').textContent = s.hp; }
-      const p = this.project(s.x, ry + CHICKEN_H + 0.3, s.z);
-      if (p && s.alive) {
+      const p = this.project(s.x, ry + CHICKEN_H * sc + 0.3, s.z);
+      if (p && s.alive && !(isFp && s.id === active)) {
         c.lbl.style.display = '';
         c.lbl.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
         c.lbl.classList.toggle('act', s.id === active);
@@ -474,7 +620,7 @@ export class Renderer {
     }
     // flecha sobre el pollito del turno
     const ac = this.chickens.get(active);
-    if (ac && ac.lp && v.phase === 'play') {
+    if (ac && ac.lp && v.phase === 'play' && !isFp) {
       this.marker.style.display = '';
       this.marker.style.color = this.teamsMeta[ac.team].color;
       this.marker.style.transform = `translate(${ac.lp.x}px, ${ac.lp.y - 30 - Math.abs(Math.sin(this.time * 4)) * 10}px) translate(-50%, -100%)`;
@@ -498,11 +644,18 @@ export class Renderer {
       let it = this.objs.get(o.id);
       if (!it) {
         const kind = PROJ_MODEL[o.kind] || 'egg';
-        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2 }[o.kind] || 1;
+        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, cajaHuevo: 1.25, maquinaLata: 1.35, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2, fuego: 1.8 }[o.kind] || 1;
         const mesh = makeObject(kind, scale);
         this.scene.add(mesh);
         it = { mesh, kind: o.kind };
-        if (o.kind.startsWith('caja')) { it.para = makeObject('sombrilla', 0.85); it.para.position.y = 1.35; mesh.add(it.para); }
+        if (o.kind.startsWith('caja') && o.kind !== 'cajaHuevo') {
+          it.para = makeObject('sombrilla', 0.85); it.para.position.y = 1.35; mesh.add(it.para);
+          const tm = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2222, toneMapped: false }));
+          tm.position.set(0.22, 0.62, 0.22);
+          tm.visible = false;
+          mesh.add(tm);
+          it.trapMark = tm;
+        }
         if (o.kind === 'lapida' && o.name) { const l = document.createElement('div'); l.className = 'lbl tomb'; l.textContent = o.name; this.overlay.appendChild(l); it.lbl = l; }
         this.objs.set(o.id, it);
       }
@@ -513,10 +666,39 @@ export class Renderer {
         if (o.kind === 'bazuca') m.rotation.x = Math.PI / 2;
       } else if (['granada', 'maiz', 'oro', 'pop'].includes(o.kind)) {
         m.rotation.x += dt * 8; m.rotation.z += dt * 5;
+      } else if (o.kind === 'bolaBillar') {
+        const dx = o.x - (it.lx ?? o.x), dz = o.z - (it.lz ?? o.z);
+        const d = Math.hypot(dx, dz);
+        it.lx = o.x; it.lz = o.z;
+        m.rotation.y = o.yaw;
+        if (d > 0.002) m.rotation.x += d / 0.38;
       } else m.rotation.y = o.yaw;
       if (o.kind === 'gallina') m.position.y += Math.abs(Math.sin(this.time * 14)) * 0.12;
+      if (o.kind === 'cajaHuevo') {
+        m.position.y += Math.sin(this.time * 3.5 + o.id) * 0.05;
+        if (Math.random() < 0.25) this.parts.add({ x: o.x + (Math.random() - 0.5) * 0.5, y: o.y + 0.6, z: o.z + (Math.random() - 0.5) * 0.5, vx: 0, vy: 0.7, vz: 0, size: 0.08, color: '#ffe066', life: 0.4, grav: -0.2 });
+      }
+      if (o.kind === 'maquinaLata' && Math.random() < 0.35) {
+        this.parts.add({ x: o.x + 0.24, y: o.y + 1.25, z: o.z - 0.2, vx: (Math.random() - 0.5) * 0.12, vy: 1.1, vz: (Math.random() - 0.5) * 0.12, size: 0.15, color: '#8d99a6', life: 0.6, grav: -0.3, grow: 1.8 });
+      }
       if (o.kind === 'paloma') m.scale.y = 1.4 * (1 + Math.sin(this.time * 20) * 0.3);
+      if (o.kind === 'fuego') {
+        m.scale.y = 1.6 + Math.sin(this.time * 18 + o.id) * 0.35;
+        m.rotation.y += dt * 2.2;
+        if (Math.random() < 0.65) {
+          const a = Math.random() * Math.PI * 2, r = Math.random() * 1.4;
+          this.parts.add({ x: o.x + Math.cos(a) * r, y: o.y + 0.2, z: o.z + Math.sin(a) * r, vx: (Math.random() - 0.5) * 0.8, vy: 2 + Math.random() * 2.2, vz: (Math.random() - 0.5) * 0.8, size: 0.16, color: Math.random() < 0.5 ? '#ff5a1f' : '#ffd23f', life: 0.5, grav: -1, shrink: true });
+        }
+      }
       if (it.para) it.para.visible = !!o.para;
+      if (it.trapMark) {
+        const isTrap = !!(o.trap || (o.trig && o.kind.startsWith('caja')));
+        it.trapMark.visible = isTrap;
+        if (isTrap) {
+          it.trapMark.scale.setScalar(0.85 + Math.sin(this.time * 14 + o.id) * 0.3);
+          m.rotation.z = Math.sin(this.time * 16 + o.id) * 0.055;
+        } else m.rotation.z = 0;
+      }
       if (o.kind === 'mina') m.visible = !o.trig || Math.sin(this.time * 30) > -0.3;
       if (o.kind === 'vela' && Math.random() < 0.5) this.parts.add({ x: o.x, y: o.y + 0.9, z: o.z, vx: (Math.random() - 0.5) * 0.4, vy: 1.2, vz: (Math.random() - 0.5) * 0.4, size: 0.1, color: Math.random() < 0.5 ? '#ffd23f' : '#ff7a1a', life: 0.4, grav: 0, shrink: true });
       if (['bazuca', 'guacamaya'].includes(o.kind) && Math.random() < 0.7) this.parts.add({ x: o.x, y: o.y, z: o.z, vx: 0, vy: 0.4, vz: 0, size: 0.22, color: '#d8d8d8', life: 0.6, grav: -0.5, grow: 1.5, drag: 1 });
@@ -529,16 +711,57 @@ export class Renderer {
     for (const [id, it] of this.objs) if (!seen.has(id)) { this.scene.remove(it.mesh); if (it.lbl) it.lbl.remove(); this.objs.delete(id); }
 
     // mira, puntos guía y cursor del mapa
-    const ach = v.chickens.find((s) => s.id === active);
     const wp = T ? weaponById(T.weapon) : null;
     const showAim = ach && ach.alive && v.phase === 'play' && wp && (wp.aim === 'power' || wp.aim === 'direct') && !ach.rope && !ach.jet && T.mode !== 'target';
     if (showAim) {
       const cp = Math.cos(T.pitch), dx = Math.sin(ach.yaw) * cp, dy = Math.sin(T.pitch), dz = Math.cos(ach.yaw) * cp;
-      const ox = ach.x, oy = ach.y + 0.75, oz = ach.z;
+      const ox = isFp ? ach.x + dx * 0.25 : ach.x;
+      const oy = isFp ? ach.y + 1.02 : ach.y + 0.75;
+      const oz = isFp ? ach.z + dz * 0.25 : ach.z;
       this.xhair.visible = true;
       this.xhair.position.set(ox + dx * 4, oy + dy * 4, oz + dz * 4);
-      this.dots.forEach((d, i) => { d.visible = T.mode === 'aim'; d.position.set(ox + dx * (1 + i * 0.5), oy + dy * (1 + i * 0.5), oz + dz * (1 + i * 0.5)); });
-    } else { this.xhair.visible = false; this.dots.forEach((d) => { d.visible = false; }); }
+      this.dots.forEach((d, i) => { d.visible = !isFp && !T.visor && T.mode === 'aim'; d.position.set(ox + dx * (1 + i * 0.5), oy + dy * (1 + i * 0.5), oz + dz * (1 + i * 0.5)); });
+      if (T.visor) {
+        const sx0 = ach.x + dx * 0.6, sy0 = ach.y + 0.75 + dy * 0.6, sz0 = ach.z + dz * 0.6;
+        if (wp.aim === 'power') {
+          const pwr = T.charging ? Math.max(0.08, T.power) : 0.65;
+          const sp = 5 + pwr * 21;
+          let px = sx0, py = sy0, pz = sz0;
+          let vx = dx * sp, vy = dy * sp, vz = dz * sp;
+          const wk = wp.id === 'bazuca' ? 7 : 0;
+          const wx = v.wind ? v.wind[0] : 0, wz = v.wind ? v.wind[1] : 0;
+          const stepDt = 0.065;
+          let hit = false;
+          for (let i = 0; i < this.visorDots.length; i++) {
+            const vd = this.visorDots[i];
+            if (hit) { vd.visible = false; continue; }
+            vy -= PROJ_GRAVITY * stepDt;
+            if (wk) { vx += wx * wk * stepDt; vz += wz * wk * stepDt; }
+            px += vx * stepDt; py += vy * stepDt; pz += vz * stepDt;
+            vd.visible = true;
+            vd.position.set(px, py, pz);
+            if ((this.terrain && this.terrain.solid(px, py, pz)) || py < wy) hit = true;
+          }
+        } else {
+          let hit = false;
+          for (let i = 0; i < this.visorDots.length; i++) {
+            const vd = this.visorDots[i];
+            if (hit) { vd.visible = false; continue; }
+            const dist = 0.8 + i * 0.8;
+            const px = sx0 + dx * dist, py = sy0 + dy * dist, pz = sz0 + dz * dist;
+            vd.visible = true;
+            vd.position.set(px, py, pz);
+            if ((this.terrain && this.terrain.solid(px, py, pz)) || py < wy) hit = true;
+          }
+        }
+      } else {
+        this.visorDots.forEach((d) => { d.visible = false; });
+      }
+    } else {
+      this.xhair.visible = false;
+      this.dots.forEach((d) => { d.visible = false; });
+      this.visorDots.forEach((d) => { d.visible = false; });
+    }
     if (T && T.mode === 'target' && T.cursor && v.phase === 'play') {
       this.cursor.visible = true;
       const cy = this.groundBelow(T.cursor[0], 30, T.cursor[1]);
@@ -606,6 +829,14 @@ export class Renderer {
         speed = 6;
         break;
       }
+      case 'fp': {
+        const p = c.pitch || 0;
+        const cp = Math.cos(p), dx = Math.sin(c.yaw) * cp, dy = Math.sin(p), dz = Math.cos(c.yaw) * cp;
+        pos = f.clone().add(new THREE.Vector3(dx * 0.25, 1.02, dz * 0.25));
+        look = pos.clone().add(new THREE.Vector3(dx * 12, dy * 12, dz * 12));
+        speed = 24;
+        break;
+      }
       case 'proj': case 'look': {
         const off = this.cam.position.clone().sub(this.camLook);
         off.y = 0;
@@ -621,6 +852,13 @@ export class Renderer {
         look = f.clone();
         speed = 5;
         break;
+      case 'cine': {
+        // cámara de cinemática: gira alrededor del punto f a la distancia y altura que mande el director
+        pos = f.clone().add(new THREE.Vector3(Math.sin(c.yaw) * c.dist, c.h, Math.cos(c.yaw) * c.dist));
+        look = f.clone().add(new THREE.Vector3(0, 0.8, 0));
+        speed = 2.4;
+        break;
+      }
       case 'over':
         pos = new THREE.Vector3(cx, 0, cz).add(back(c.yaw, 52)).add(new THREE.Vector3(0, 46, 0));
         look = new THREE.Vector3(cx, 2, cz);
@@ -633,18 +871,58 @@ export class Renderer {
         speed = 1.5;
         break;
     }
-    // que la cámara no se meta en el terreno
-    const g = this.groundBelow(pos.x, NY * VOX, pos.z);
-    if (pos.y < g + 1.6) pos.y = g + 1.6;
-    const k = 1 - Math.exp(-dt * speed);
-    this.cam.position.lerp(pos, k);
-    this.camLook.lerp(look, k);
+    // que la cámara no se meta en el terreno ni quede tapada por montañas o decoraciones
+    if (c.m !== 'fp') {
+      const g = this.groundBelow(pos.x, NY * VOX, pos.z);
+      if (pos.y < g + 1.6) pos.y = g + 1.6;
+    }
+    if (this.terrain && (c.m === 'follow' || c.m === 'aim' || c.m === 'look')) {
+      const head = new THREE.Vector3(f.x, f.y + 0.95, f.z);
+      if (this.rayBlocked(head, pos)) {
+        const cand = new THREE.Vector3();
+        let found = false;
+        for (let s = 1; s <= 14 && !found; s++) {
+          const u = s / 14;
+          // 1) acercar y subir a la vez
+          cand.copy(pos).lerp(head, u * 0.85);
+          cand.y = Math.max(cand.y + u * 6.0, this.groundBelow(cand.x, cand.y + 4, cand.z) + 1.2);
+          if (!this.terrain.solid(cand.x, cand.y, cand.z) && !this.rayBlocked(head, cand)) {
+            pos.copy(cand);
+            found = true;
+            break;
+          }
+          // 2) acercar directo hacia el pollito (por delante del obstáculo)
+          cand.copy(pos).lerp(head, u * 0.88);
+          cand.y = Math.max(head.y + 0.6, cand.y);
+          if (!this.terrain.solid(cand.x, cand.y, cand.z) && !this.rayBlocked(head, cand)) {
+            pos.copy(cand);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          pos.copy(pos).lerp(head, 0.85);
+          pos.y = head.y + 1.2;
+        }
+        speed = Math.max(speed, 6.0);
+      }
+    }
+    if (c.m === 'fp') {
+      this.cam.position.copy(pos);
+      this.camLook.copy(look);
+    } else {
+      const k = 1 - Math.exp(-dt * speed);
+      this.cam.position.lerp(pos, k);
+      this.camLook.lerp(look, k);
+    }
+    this.camYaw = c.yaw !== undefined ? c.yaw : Math.atan2(this.camLook.x - this.cam.position.x, this.camLook.z - this.cam.position.z);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 2.2);
       this.cam.position.x += (Math.random() - 0.5) * this.shake * 0.5;
       this.cam.position.y += (Math.random() - 0.5) * this.shake * 0.5;
     }
     this.cam.lookAt(this.camLook);
+    this.cam.updateMatrixWorld();
   }
 
   dispose() {

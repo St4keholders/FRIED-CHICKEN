@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, weaponById } from '../game/constants';
+import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, islandName } from '../game/constants';
 import { sha256 } from '../game/sha256';
 import { peerParamsString } from '../game/peeropts';
 import { chickenPortrait } from '../game/render';
-import { ConfigPanel, Wind, TeamBars, Results, MyChicken } from './Shared';
-import { TurnPad } from './TouchControls';
+import { ConfigPanel, MatchHud, Results, MyChicken, CinematicOverlay } from './Shared';
+import { TurnPad, WeaponGrid } from './TouchControls';
 
 function Gate({ onOk }) {
   const [pw, setPw] = useState('');
@@ -94,8 +94,17 @@ export default function HostApp() {
   const unlockAudio = () => { if (h) { h.audio.init(); if (st && st.phase === 'lobby' && h.audio.song === -1) h.audio.playSong(0); } };
 
   return (
-    <div className="stage" ref={stage} onPointerDown={unlockAudio}>
+    <div className="stage" ref={stage} onPointerDown={unlockAudio} onTouchStart={unlockAudio}>
+      {st && st.showFps && <div className="fps-badge">⚡ {st.fps || 60} FPS</div>}
       {st && st.phase === 'lobby' && <Lobby st={st} h={h} qr={qr} url={url} share={share} msg={msg} />}
+      {st && st.phase === 'cinematic' && (
+        <CinematicOverlay
+          cinema={st.cinema}
+          isHost={true}
+          onNext={() => h.advanceCinema()}
+          onSkip={() => h.skipCinema()}
+        />
+      )}
       {st && (st.phase === 'match' || st.phase === 'results') && <Hud st={st} h={h} />}
     </div>
   );
@@ -104,6 +113,11 @@ export default function HostApp() {
 function Lobby({ st, h, qr, url, share, msg }) {
   const humans = st.players.filter(Boolean).length;
   const shared = st.cfg.teamMode === 'shared';
+  const j1 = st.hostSlot >= 0 ? st.players[st.hostSlot] : null;
+  const canEdit = !!(j1 && (j1.kind === 'local' || j1.kind === 'kb'));
+  const roNotice = j1 && j1.kind === 'phone'
+    ? 'Los ajustes los elige J1 desde su celular'
+    : !j1 ? 'Únete con tu celular o teclado (J1) para elegir los ajustes' : '';
   return (
     <div className="lobby">
       <div className="logo">FRIED<span className="l2">CHICKEN</span><small>Guerra de pollitos por turnos · conecta tu celular y a pelear</small></div>
@@ -111,7 +125,7 @@ function Lobby({ st, h, qr, url, share, msg }) {
         <h3>Únete con tu celular</h3>
         {qr ? <img className="qr" src={qr} alt="QR para unirse" /> : <div className="qr" />}
         <div className="code">{st.code || '·····'}</div>
-        <div className="small">{url.split('?')[0].replace(/^https?:\/\//, '')}</div>
+        <div className="small">{url.split('?')[0].replace(/^https?:\/\//, '')} · o abre el link en otro PC</div>
         <div className="row" style={{ justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
           <button className="btn blue sm" onClick={share}>📤 Compartir link</button>
           {st.touch && st.local === null && <button className="btn green sm" onClick={() => h.addLocal()}>🎮 Jugar en este celular</button>}
@@ -121,58 +135,60 @@ function Lobby({ st, h, qr, url, share, msg }) {
         <div className={`status ${st.peerStatus === 'error' ? 'err' : ''}`}>{st.peerStatus === 'ready' ? '🟢 Listo para recibir mandos' : st.peerStatus === 'error' ? st.peerError : '🟡 Conectando…'}</div>
       </div>
       {st.local !== null && st.players[st.local] && (
-        <div className="localc"><MyChicken me={st.players[st.local]} slot={st.local} players={st.players} cfg={st.cfg} onPick={(m) => h.pick(st.local, m)} /></div>
+        <div className="localc"><MyChicken me={st.players[st.local]} slot={st.local} players={st.players} cfg={st.cfg} onPick={(m) => h.pick(st.local, m)} unlockedZorro={st.unlockedZorro} /></div>
       )}
       <div className="card cfgc">
-        <h3>Ajustes de la partida</h3>
-        <ConfigPanel cfg={st.cfg} onCfg={(c) => h.setCfg(c)} canEdit humans={humans} />
+        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>Ajustes de la partida</h3>
+          <span className="pill isl-pill">{st.cfg.mode === 'historia' ? `📖 Nivel ${st.cfg.storyLevel || 1}` : `🗺️ ${islandName(st.cfg.island)}`}</span>
+        </div>
+        {roNotice && <div className="ro-note">{roNotice}</div>}
+        <ConfigPanel cfg={st.cfg} onCfg={(c) => canEdit && h.setCfg(c)} canEdit={canEdit} humans={humans} />
       </div>
       <div className="slots">
         {[0, 1, 2, 3].map((i) => <SlotCard key={i} i={i} p={st.players[i]} shared={shared && st.cfg.mode === 'versus'} canRemove onRemove={(s) => h.removePlayer(s)} />)}
-        <button className="btn red big go" disabled={!humans} onClick={() => h.startMatch()}>¡A PELEAR!</button>
+        <button className="btn red big go" disabled={!humans || !canEdit} onClick={() => canEdit && h.startMatch()}>¡A PELEAR!</button>
       </div>
     </div>
   );
 }
 
 function Hud({ st, h }) {
+  const [kbGrid, setKbGrid] = useState(false);
   const t = st.turn;
-  const w = t ? weaponById(t.weapon) : null;
-  const n = t && t.inv ? t.inv[t.weapon] : -1;
-  const clockVal = t ? (t.retreat ? t.retreat : t.clock) : '';
   const showPlay = t && (st.matchPhase === 'play' || st.matchPhase === 'retreat');
   const isHost = true;
   return (
-    <div className="hud">
-      {showPlay && (
-        <div className="turnp">
-          <div className="tb" style={{ '--tc': t.color }}>{t.cpu ? '🤖 ' : ''}{t.teamName}<small>{t.ch}{t.dd ? ' · 💪 Doble daño' : ''}</small></div>
-          <div className={`clock ${t.retreat ? 'ret' : t.clock <= 5 ? 'warn' : ''}`}>{clockVal}</div>
-        </div>
-      )}
-      <Wind wind={st.wind} camYaw={st.camYaw} />
-      {showPlay && w && !st.localTurn && (
-        <div className="card wpn">
-          <span className="ic">{w.icon}</span>
-          <div><div className="nm">{w.name}</div><div className="am">{n < 0 ? 'Munición infinita' : `Quedan ${n}`}{w.fuse ? ` · Mecha ${t.fuse}s` : ''}</div></div>
-        </div>
-      )}
-      {showPlay && t.charging && <div className="powerbar"><i style={{ width: `${Math.round(t.power * 100)}%` }} /></div>}
-      {st.phase === 'match' && st.local === null && <div className="pill sudden">{st.sudden ? '💀 Muerte súbita' : `💀 Muerte súbita en ${Math.floor(st.suddenIn / 60)}:${String(st.suddenIn % 60).padStart(2, '0')}`}</div>}
-      <TeamBars teams={st.teams} current={t ? t.team : -1} />
-      {st.banner && (
-        <div className="banner" style={{ '--tc': st.banner.color }}>
-          <div className="bt">{st.banner.text}</div>
-          {st.banner.sub && <div className="bs">{st.banner.sub}</div>}
-        </div>
-      )}
-      {st.kbTurn && showPlay && (
-        <div className="card keys">
-          <b>Teclado:</b> W/S caminar · A/D girar · R apuntar · Espacio (mantener) disparar · J saltar · K salto atrás · E/Q cambiar arma · 1-5 mecha · C mapa
-        </div>
-      )}
+    <MatchHud
+      turn={t}
+      matchPhase={st.matchPhase}
+      wind={st.wind}
+      camYaw={st.camYaw}
+      teams={st.teams}
+      radar={st.radar}
+      smallRadar={st.local !== null}
+      sudden={st.sudden}
+      suddenIn={st.suddenIn}
+      showSudden={st.phase === 'match' && st.local === null && st.cfg.mode !== 'historia'}
+      banner={st.banner}
+      kbTurn={st.kbTurn}
+      hideWeapon={!!st.localTurn}
+      story={st.story}
+      onOpenWeapons={st.kbTurn && showPlay ? () => setKbGrid(true) : null}
+      onPickChicken={st.kbTurn && showPlay && t && t.canPick ? (d) => h.kbAct({ t: 'pickch', d }) : null}
+      onToggleFp={st.kbTurn && showPlay ? () => h.kbAct({ t: 'fp' }) : null}
+    >
       {st.localTurn && showPlay && (
-        <TurnPad info={t} inv={t.inv} onInput={(i) => h.setLocalIn(i)} onAct={(a) => h.localAct(a)} />
+        <TurnPad info={t} inv={t.inv} onInput={(i) => h.setLocalIn(i)} onAct={(a) => h.localAct(a)} onAim={({ dyaw, dpitch }) => h.localAim(dyaw, dpitch)} />
+      )}
+      {kbGrid && st.kbTurn && showPlay && t && (
+        <WeaponGrid
+          inv={t.inv}
+          current={t.weapon}
+          onClose={() => setKbGrid(false)}
+          onPick={(id) => { h.kbAct({ t: 'weapon', w: id }); setKbGrid(false); }}
+          onSurrender={() => { h.kbAct({ t: 'surrender' }); setKbGrid(false); }}
+        />
       )}
       {st.phase === 'match' && <button className="btn sm white" style={st.local !== null ? { position: 'absolute', top: 64, left: 16, pointerEvents: 'auto' } : { position: 'absolute', bottom: 16, right: 16, pointerEvents: 'auto' }} onClick={() => h.togglePause()}>II Pausa</button>}
       {st.paused && st.phase === 'match' && (
@@ -187,7 +203,17 @@ function Hud({ st, h }) {
           </div>
         </div>
       )}
-      {st.phase === 'results' && <Results r={st.results} canAct={isHost} onAgain={() => h.next('again')} onLobby={() => h.next('lobby')} />}
-    </div>
+      {st.phase === 'results' && (
+        <Results
+          r={st.results}
+          canAct={isHost}
+          onAgain={() => h.next('again')}
+          onLobby={() => h.next('lobby')}
+          onNextStory={() => h.nextStoryLevel()}
+          onRetryStory={() => h.retryStory()}
+          onSkipStory={() => h.skipStoryLevel()}
+        />
+      )}
+    </MatchHud>
   );
 }

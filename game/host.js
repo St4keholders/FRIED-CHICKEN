@@ -1,8 +1,8 @@
 // Motor del anfitrión (pantalla principal o celular de J1): red, lobby, equipos y partida
 import {
   PEER_PREFIX, CODE_CHARS, MAX_PLAYERS, TEAM_COLORS, TEAM_NAMES, CPU_TEAM_NAMES, CHICKEN_NAMES, ROBOT_NAMES,
-  ACCESSORIES, DEFAULT_CFG, ISLANDS, RANDOM_ISLAND, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS,
-  CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS,
+  ACCESSORIES, availableAccessories, DEFAULT_CFG, ISLANDS, RANDOM_ISLAND, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS,
+  CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS, sensRad,
 } from './constants.js';
 import { Match } from './match.js';
 import { CpuBrain } from './ai.js';
@@ -10,6 +10,8 @@ import { Renderer } from './render.js';
 import { Audio, MENU_SONG } from './audio.js';
 import { islandTheme } from './islands.js';
 import { peerOptionsFromURL } from './peeropts.js';
+import { LEVELS, levelById, storyTeams, storyCfg } from './story.js';
+import { Cinema, buildCinematic } from './cinema.js';
 
 const STEP = 1 / 60;
 const DEFAULT_ACC = ['casco', 'vueltiao', 'gorra', 'corona'];
@@ -30,7 +32,7 @@ function loadCfg() {
 const KEYS = {
   up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   fire: ['Space'], jump: ['KeyJ', 'Enter', 'NumpadEnter'], back: ['KeyK', 'Backspace'], next: ['KeyE', 'Tab'], prev: ['KeyQ'],
-  aim: ['KeyR'], view: ['KeyC'],
+  aim: ['KeyR'], view: ['KeyC'], fp: ['KeyV'],
 };
 
 export class GameHost {
@@ -51,8 +53,17 @@ export class GameHost {
     this.localSlot = null;
     this.localIn = { mx: 0, my: 0, fire: false, jumpHeld: false };
     this.keys = new Set();
+    this.mouseLocked = false;
+    this.mouseFire = false;
     this.paused = false;
+    this.showFps = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fps') === '1';
+    this.fps = 60;
+    this.fpsFrames = 0;
+    this.fpsTimer = 0;
+    this.lowFpsTime = 0;
     this.match = null;
+    this.cinema = null;
+    this.unlockedZorro = undefined;
     this.brains = [];
     this.demo = null;
     this.results = null;
@@ -66,10 +77,23 @@ export class GameHost {
     this.last = performance.now();
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
+    this.onMouseDown = this.onMouseDown.bind(this);
+    this.onMouseUp = this.onMouseUp.bind(this);
+    this.onMouseMove = this.onMouseMove.bind(this);
+    this.onWheel = this.onWheel.bind(this);
+    this.onCtx = (e) => { if (this.phase === 'match') e.preventDefault(); };
+    this.onPtrLock = () => { if (typeof document !== 'undefined' && document.pointerLockElement !== this.renderer.canvas) this.mouseFire = false; };
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('mousemove', this.onMouseMove);
+    this.renderer.canvas.addEventListener('mousedown', this.onMouseDown);
+    this.renderer.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.renderer.canvas.addEventListener('contextmenu', this.onCtx);
+    document.addEventListener('pointerlockchange', this.onPtrLock);
     this.onVis = () => { if (document.hidden && this.phase === 'match' && !this.paused) this.togglePause(); };
     document.addEventListener('visibilitychange', this.onVis);
+    if (typeof window !== 'undefined') window.__fcHost = this;
     this.startDemo();
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
@@ -78,12 +102,35 @@ export class GameHost {
 
   destroy() {
     this.running = false;
+    if (typeof window !== 'undefined' && window.__fcHost === this) window.__fcHost = null;
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('mousemove', this.onMouseMove);
+    this.renderer.canvas.removeEventListener('mousedown', this.onMouseDown);
+    this.renderer.canvas.removeEventListener('wheel', this.onWheel);
+    this.renderer.canvas.removeEventListener('contextmenu', this.onCtx);
+    document.removeEventListener('pointerlockchange', this.onPtrLock);
     document.removeEventListener('visibilitychange', this.onVis);
     this.audio.stopSong();
     try { this.peer && this.peer.destroy(); } catch (e) { /* nada */ }
     this.renderer.dispose();
+  }
+
+  unlockZorro() {
+    this.unlockedZorro = true;
+    try { localStorage.setItem('fc_unlock_zorro', '1'); } catch (e) { /* nada */ }
+    this.broadcast(() => this.phaseMsg());
+    this.changed();
+  }
+  isZorroUnlocked() {
+    if (this.unlockedZorro !== undefined && this.unlockedZorro !== null) return this.unlockedZorro;
+    try {
+      this.unlockedZorro = typeof localStorage !== 'undefined' && localStorage.getItem('fc_unlock_zorro') === '1';
+    } catch (e) {
+      this.unlockedZorro = false;
+    }
+    return this.unlockedZorro;
   }
 
   // ---------------- estado para React ----------------
@@ -94,11 +141,18 @@ export class GameHost {
       players: this.players.map((p) => p && { slot: p.slot, kind: p.kind, color: p.color, acc: p.acc, teamName: p.teamName, names: p.names, team: p.team, connected: p.connected }),
       cfg: { ...this.cfg }, local: this.localSlot, touch: this.touch, hostSlot: this.hostSlot(),
       paused: this.paused, muted: this.audio.muted,
-      turn: m ? m.turnInfo() : null, teams: m ? m.teamSummary() : null, matchPhase: m ? m.phase : null,
+      turn: m ? m.turnInfo() : null, teams: m ? m.teamSummary() : null, radar: m ? m.radarInfo() : null, matchPhase: m ? m.phase : null,
       wind: m ? m.wind : null, camYaw: this.renderer.camYaw, banner: this.banner, results: this.results,
       island: m ? islandTheme(m.island).name : '', suddenIn: m ? Math.max(0, Math.ceil(m.cfg.sudden * 60 - m.time)) : 0, sudden: m ? m.sudden : false,
+      demoIsland: this.demo ? this.demo.island : null,
       localTurn: m && m.turn && this.localSlot !== null && m.turn.slot === this.localSlot && !m.turn.cpu,
       kbTurn: m && m.turn && m.turn.slot !== null && this.players[m.turn.slot] && this.players[m.turn.slot].kind === 'kb',
+      cinema: this.cinema ? this.cinema.view() : null,
+      story: m && m.story ? m.storyView() : null,
+      storyLevel: (this.cfg && this.cfg.storyLevel) || 1,
+      unlockedZorro: this.isZorroUnlocked(),
+      fps: this.fps,
+      showFps: this.showFps,
     };
   }
   changed() { this.onChange && this.onChange(this.snapshot()); }
@@ -207,7 +261,8 @@ export class GameHost {
     const p = this.players[slot];
     if (!p || this.phase !== 'lobby') return;
     if (Number.isInteger(msg.color) && TEAM_COLORS[msg.color] && msg.color !== 4 && !this.players.some((o) => o && o !== p && o.color === msg.color)) p.color = msg.color;
-    if (msg.acc && ACCESSORIES.some((a) => a.id === msg.acc)) p.acc = msg.acc;
+    const allowed = availableAccessories(this.isZorroUnlocked());
+    if (msg.acc && allowed.some((a) => a.id === msg.acc)) p.acc = msg.acc;
     if (typeof msg.teamName === 'string' && msg.teamName.trim()) p.teamName = msg.teamName.trim().slice(0, 20);
     if (Array.isArray(msg.names)) p.names = p.names.map((n, i) => (typeof msg.names[i] === 'string' && msg.names[i].trim() ? msg.names[i].trim().slice(0, 12) : n));
     if (Number.isInteger(msg.team) && msg.team >= 0 && msg.team < 4) p.team = msg.team;
@@ -220,20 +275,35 @@ export class GameHost {
       t: 'lobby', you: slot, host: this.hostSlot() === slot, phase: this.phase, noScreen: this.localSlot !== null,
       players: this.players.map((p) => p && { kind: p.kind, color: p.color, acc: p.acc, teamName: p.teamName, names: p.names, team: p.team, connected: p.connected }),
       cfg: this.cfg,
+      unlockedZorro: this.isZorroUnlocked(),
     };
   }
   broadcastLobby() { this.broadcast((i) => this.lobbyMsg(i)); }
 
   setCfg(c) {
     const cfg = this.cfg;
+    const prevMode = cfg.mode;
     if (MODES.some((m) => m.id === c.mode)) cfg.mode = c.mode;
+    if (Number.isInteger(c.storyLevel) && c.storyLevel >= 1 && c.storyLevel <= 8) cfg.storyLevel = c.storyLevel;
     if (TEAM_MODES.some((m) => m.id === c.teamMode)) cfg.teamMode = c.teamMode;
     if (CHICKEN_COUNTS.includes(c.chickens)) cfg.chickens = c.chickens;
     if (HP_OPTIONS.includes(c.hp)) cfg.hp = c.hp;
     if (TURN_TIMES.includes(c.turnTime)) cfg.turnTime = c.turnTime;
     if (WEAPON_SETS.some((w) => w.id === c.weaponSet)) cfg.weaponSet = c.weaponSet;
+    const prevIsland = cfg.island;
     if (c.island === RANDOM_ISLAND || ISLANDS.some((i) => i.id === c.island)) cfg.island = c.island;
+    if (this.phase === 'lobby') {
+      if (cfg.mode === 'historia' && (c.mode === 'historia' || c.storyLevel !== undefined || prevMode !== 'historia')) {
+        const lvl = levelById(cfg.storyLevel || 1);
+        if (lvl && (!this.demo || this.demo.island !== lvl.island)) {
+          this.startDemo(lvl.island);
+        }
+      } else if (c.island && (cfg.island !== prevIsland || (cfg.island !== RANDOM_ISLAND && (!this.demo || this.demo.island !== cfg.island)))) {
+        this.startDemo(cfg.island === RANDOM_ISLAND ? null : cfg.island);
+      }
+    }
     if (SUDDEN_OPTIONS.includes(c.sudden)) cfg.sudden = c.sudden;
+    if (PICK_CHICKEN_OPTIONS.some((o) => o.id === c.pickChicken)) cfg.pickChicken = c.pickChicken;
     if (Number.isInteger(c.cpuTeams) && c.cpuTeams >= 0 && c.cpuTeams <= 3) cfg.cpuTeams = c.cpuTeams;
     if (CPU_LEVELS.some((l) => l.id === c.cpuLevel)) cfg.cpuLevel = c.cpuLevel;
     if (typeof c.friendly === 'boolean') cfg.friendly = c.friendly;
@@ -274,11 +344,19 @@ export class GameHost {
     const isHost = this.hostSlot() === slot;
     switch (msg.t) {
       case 'in': this.phoneIn[slot] = { mx: +msg.mx || 0, my: +msg.my || 0, fire: !!msg.fire, jumpHeld: !!msg.jh }; break;
+      case 'aimd': this.playerAim(slot, msg.dyaw, msg.dpitch); break;
       case 'act': this.playerAct(slot, msg.a || {}); break;
       case 'pick': this.pick(slot, msg); break;
       case 'cfg': if (isHost && this.phase === 'lobby') this.setCfg(msg.cfg || {}); break;
       case 'start': if (isHost) this.startMatch(); break;
       case 'next': if (isHost) this.next(msg.v); break;
+      case 'cine':
+        if (msg.act === 'next') this.advanceCinema();
+        else if (msg.act === 'skip' && isHost) this.skipCinema();
+        break;
+      case 'story_retry': if (isHost) this.retryStory(); break;
+      case 'story_next': if (isHost) this.nextStoryLevel(); break;
+      case 'story_skip': if (isHost) this.skipStoryLevel(); break;
       case 'quit': if (isHost) this.quit(); break;
       case 'pause': if (this.phase === 'match') this.togglePause(); break;
       case 'view':
@@ -294,7 +372,13 @@ export class GameHost {
   playerAct(slot, a) {
     const m = this.match;
     if (!m || this.paused || !m.turn || m.turn.cpu || m.turn.slot !== slot) return;
-    if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'surrender'].includes(a.t)) m.act(a);
+    if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'fp', 'surrender', 'pickch'].includes(a.t)) m.act(a);
+  }
+
+  playerAim(slot, dyaw, dpitch) {
+    const m = this.match;
+    if (!m || this.paused || !m.turn || m.turn.cpu || m.turn.slot !== slot) return;
+    m.aimDelta(dyaw, dpitch);
   }
 
   react(slot, e) {
@@ -322,11 +406,26 @@ export class GameHost {
       if (code === 'Space' && kbSlot < 0) {
         const free = this.players.findIndex((p) => !p);
         if (free >= 0) { this.players[free] = this.newPlayer(free, 'kb'); this.audio.sfx('join'); this.broadcastLobby(); this.changed(); }
-      } else if (code === 'Enter' || code === 'NumpadEnter') this.startMatch();
+      } else if (code === 'Enter' || code === 'NumpadEnter') {
+        const hs = this.hostSlot();
+        const hp = hs >= 0 ? this.players[hs] : null;
+        if (hp && (hp.kind === 'local' || hp.kind === 'kb')) this.startMatch();
+      }
+      return;
+    }
+    if (this.phase === 'cinematic') {
+      if (code === 'Enter' || code === 'NumpadEnter' || code === 'Space') { this.advanceCinema(); return; }
+      if (code === 'Escape') { this.skipCinema(); return; }
       return;
     }
     if (this.phase === 'results') { if (code === 'Enter' || code === 'NumpadEnter') this.next('again'); if (code === 'Escape') this.next('lobby'); return; }
     if (this.phase !== 'match') return;
+    if (code === 'Escape' && (this.mouseLocked || (typeof document !== 'undefined' && document.pointerLockElement === this.renderer.canvas))) {
+      this.mouseLocked = false;
+      this.mouseFire = false;
+      try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { /* nada */ }
+      return;
+    }
     if (code === 'Escape' || code === 'KeyP') { this.togglePause(); return; }
     const m = this.match;
     if (!m || !m.turn || m.turn.cpu || this.paused) return;
@@ -337,6 +436,8 @@ export class GameHost {
     else if (has('back')) m.act({ t: 'back' });
     else if (has('aim')) m.act({ t: 'aim' });
     else if (has('view')) m.act({ t: 'view' });
+    else if (has('fp')) m.act({ t: 'fp' });
+    else if (code === 'Tab' && m.turn.canPick) m.act({ t: 'pickch', d: e.shiftKey ? -1 : 1 });
     else if (has('next') || has('prev')) this.cycleWeapon(has('next') ? 1 : -1);
     else if (/^Digit[1-5]$/.test(code)) m.act({ t: 'fuse', v: +code.slice(5) });
   }
@@ -353,12 +454,77 @@ export class GameHost {
 
   kbInput() {
     const k = this.keys, any = (n) => KEYS[n].some((c) => k.has(c));
-    return { mx: (any('right') ? 1 : 0) - (any('left') ? 1 : 0), my: (any('up') ? 1 : 0) - (any('down') ? 1 : 0), fire: any('fire'), jumpHeld: any('jump') };
+    return { mx: (any('right') ? 1 : 0) - (any('left') ? 1 : 0), my: (any('up') ? 1 : 0) - (any('down') ? 1 : 0), fire: any('fire') || this.mouseFire, jumpHeld: any('jump') };
+  }
+
+  isKbTurn() {
+    const m = this.match;
+    if (this.phase !== 'match' || this.paused || !m || !m.turn || m.turn.cpu) return false;
+    const p = this.players[m.turn.slot];
+    return !!(p && p.kind === 'kb');
+  }
+
+  mouseSensCfg() {
+    try {
+      const c = JSON.parse(localStorage.getItem('fc_ctrl') || 'null') || {};
+      return { rad: sensRad(c.sens || 'media'), invertY: !!c.invertY };
+    } catch (e) { return { rad: 0.004, invertY: false }; }
+  }
+
+  onMouseDown(e) {
+    this.audio.init();
+    if (this.phase === 'cinematic') {
+      this.advanceCinema();
+      return;
+    }
+    if (!this.isKbTurn()) return;
+    const hasLock = typeof document !== 'undefined' && document.pointerLockElement === this.renderer.canvas;
+    if (e.button === 2) {
+      e.preventDefault();
+      this.mouseLocked = true;
+      this.lastMouse = { x: e.clientX, y: e.clientY };
+      try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
+      this.match.act({ t: 'aim' });
+    } else if (e.button === 0) {
+      if (!this.mouseLocked && !hasLock) {
+        this.mouseLocked = true;
+        this.lastMouse = { x: e.clientX, y: e.clientY };
+        try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
+        return;
+      }
+      this.mouseFire = true;
+    }
+  }
+
+  onMouseUp(e) {
+    if (e.button === 0) this.mouseFire = false;
+  }
+
+  onMouseMove(e) {
+    if (!this.isKbTurn()) return;
+    const hasLock = typeof document !== 'undefined' && document.pointerLockElement === this.renderer.canvas;
+    if (!this.mouseLocked && !hasLock) return;
+    const dx = hasLock ? (e.movementX || 0) : (this.lastMouse ? e.clientX - this.lastMouse.x : (e.movementX || 0));
+    const dy = hasLock ? (e.movementY || 0) : (this.lastMouse ? e.clientY - this.lastMouse.y : (e.movementY || 0));
+    this.lastMouse = { x: e.clientX, y: e.clientY };
+    if (!dx && !dy) return;
+    const { rad, invertY } = this.mouseSensCfg();
+    this.match.aimDelta(dx * rad, -dy * rad * (invertY ? -1 : 1));
+  }
+
+  onWheel(e) {
+    if (!this.isKbTurn()) return;
+    if (e.deltaY !== 0) {
+      e.preventDefault();
+      this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
+    }
   }
 
   // jugador en el mismo dispositivo (celular que crea la sala)
   setLocalIn(inp) { this.localIn = inp; }
   localAct(a) { if (this.localSlot !== null) this.playerAct(this.localSlot, a); }
+  localAim(dyaw, dpitch) { if (this.localSlot !== null) this.playerAim(this.localSlot, dyaw, dpitch); }
+  kbAct(a) { if (this.isKbTurn()) this.playerAct(this.match.turn.slot, a); }
 
   toggleMute() { this.audio.setMuted(!this.audio.muted); this.changed(); }
 
@@ -370,9 +536,10 @@ export class GameHost {
   }
 
   // ---------------- demo de fondo en el lobby ----------------
-  startDemo() {
+  startDemo(forceIsland) {
     const ids = ISLANDS.map((i) => i.id);
-    const island = ids[Math.floor(Math.random() * ids.length)];
+    const preferred = forceIsland || (this.cfg && this.cfg.island !== RANDOM_ISLAND ? this.cfg.island : null);
+    const island = preferred && ids.includes(preferred) ? preferred : ids[Math.floor(Math.random() * ids.length)];
     const teams = [0, 1].map((i) => ({
       id: 'd' + i, name: CPU_TEAM_NAMES[i], color: TEAM_COLORS[i].hex, dark: TEAM_COLORS[i].dark, acc: DEFAULT_ACC[i], robot: i === 1,
       cpu: 1, slots: [], alliance: 'd' + i, names: shuffle(i ? ROBOT_NAMES : CHICKEN_NAMES).slice(0, 3),
@@ -384,7 +551,13 @@ export class GameHost {
   }
 
   setWorldFrom(m) {
-    this.renderer.setWorld(m.terrain, m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot })), m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name })));
+    const look = (m.story && m.story.level && m.story.level.look) || 'dia';
+    this.renderer.setWorld(
+      m.terrain,
+      m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot, boss: t.boss })),
+      m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name, scale: c.scale, shield: c.shield, boss: c.boss })),
+      { look }
+    );
   }
 
   // ---------------- partida ----------------
@@ -422,6 +595,10 @@ export class GameHost {
 
   startMatch() {
     if (this.phase !== 'lobby' && this.phase !== 'results') return;
+    if (this.cfg.mode === 'historia') {
+      this.startStory(this.cfg.storyLevel || 1);
+      return;
+    }
     const humans = this.players.filter((p) => p && (p.connected || p.kind === 'local' || p.kind === 'kb'));
     if (!humans.length) return;
     this.audio.init();
@@ -446,21 +623,145 @@ export class GameHost {
     this.changed();
   }
 
+  startStory(lvlNumber) {
+    const n = Math.max(1, Math.min(8, lvlNumber || this.cfg.storyLevel || 1));
+    this.cfg.storyLevel = n;
+    this.audio.init();
+    const level = levelById(n);
+    const humans = this.players.filter((p) => p && (p.connected || p.kind === 'local' || p.kind === 'kb'));
+    const h0 = humans[0] || { teamName: 'Pollitos Unidos', color: 0, names: ['Pío', 'Pluma', 'Pico'], acc: 'casco', slot: 0 };
+    const heroNames = humans.length ? humans.flatMap((p) => p.names || []).filter(Boolean) : h0.names;
+    const heroColor = TEAM_COLORS[h0.color] || TEAM_COLORS[0];
+    const hero = {
+      name: h0.teamName || 'Pollitos Unidos',
+      color: heroColor.hex,
+      dark: heroColor.dark,
+      acc: h0.acc || 'casco',
+      names: heroNames.length ? heroNames : ['Pío', 'Pluma', 'Pico'],
+      slots: humans.map((p) => p.slot),
+      count: 3,
+    };
+    const teams = storyTeams(level, hero);
+    this.match = new Match({
+      cfg: storyCfg(this.cfg, level, 3),
+      teams,
+      seed: Math.floor(Math.random() * 1e9),
+      island: level.island,
+      story: level,
+    });
+    this.brains = teams.map((t) => (t.cpu !== null && t.cpu !== undefined ? new CpuBrain(this.match, t.cpu) : null));
+    this.curTurn = null;
+    this.demo = null;
+    this.setWorldFrom(this.match);
+    this.sentEdits = 0;
+    this.results = null;
+
+    // Cinemática de inicio del nivel
+    const beats = buildCinematic(level, 'intro', { heroNames: hero.names, heroColor: hero.color, heroAcc: hero.acc });
+    this.cinema = new Cinema('intro', beats, level.n);
+    this.phase = 'cinematic';
+    this.paused = false;
+    this.lastInfo = {};
+    this.audio.playSong(islandTheme(level.island).song);
+
+    const init = this.initMsg();
+    for (const p of this.viewers()) this.send(p.slot, init);
+    this.broadcast(() => this.phaseMsg());
+    this.broadcastLobby();
+    this.changed();
+  }
+
+  advanceCinema() {
+    if (this.phase !== 'cinematic' || !this.cinema) return;
+    this.audio.init();
+    this.cinema.advance();
+    this.audio.sfx('select');
+    if (this.cinema.done) {
+      this.finishCinematic();
+    } else {
+      this.broadcast(() => this.phaseMsg());
+      this.changed();
+    }
+  }
+
+  skipCinema() {
+    if (this.phase !== 'cinematic' || !this.cinema) return;
+    this.audio.init();
+    this.cinema.skip();
+    this.finishCinematic();
+  }
+
+  finishCinematic() {
+    if (!this.cinema) return;
+    const kind = this.cinema.kind;
+    const lvl = this.cinema.level;
+    this.cinema = null;
+    if (kind === 'intro') {
+      this.phase = 'match';
+      this.banner = { text: '¡A pelear!', sub: (this.match && this.match.story && this.match.story.level.goalText) || '', t: 2.6 };
+      if (this.match) this.audio.playSong(islandTheme(this.match.island).song);
+    } else if (kind === 'outro') {
+      if (lvl === 8) {
+        this.unlockZorro();
+      }
+      const sum = this.match ? this.match.teamSummary() : [];
+      const st = this.match ? this.match.stats : {};
+      const level = levelById(lvl);
+      this.results = {
+        title: lvl === 8 ? '¡RECUPERARON EL HUEVO DORADO!' : `¡Nivel ${lvl} completado!`,
+        sub: lvl === 8 ? '¡Derrotaron al Zorro Rufo y salvaron la Granja de Juguete!' : '¡Victoria! Rumbo a la siguiente misión',
+        story: true, win: true, level: lvl, levelName: level.name,
+        unlockedZorro: lvl === 8,
+        teams: sum.map((t) => ({ ...t, won: t.alliance === 'H', ...(st[t.id] || {}) })),
+      };
+      this.phase = 'results';
+      this.audio.stopSong();
+      this.audio.sfx('win');
+    }
+    this.broadcast(() => this.phaseMsg());
+    this.changed();
+  }
+
+  retryStory() {
+    this.startStory(this.cfg.storyLevel || 1);
+  }
+
+  nextStoryLevel() {
+    const next = Math.min(8, (this.cfg.storyLevel || 1) + 1);
+    this.cfg.storyLevel = next;
+    this.startStory(next);
+  }
+
+  skipStoryLevel() {
+    this.nextStoryLevel();
+  }
+
   initMsg() {
     const m = this.match;
+    const look = (m.story && m.story.level && m.story.level.look) || 'dia';
     return {
-      t: 'minit', seed: m.seed, island: m.island, edits: m.terrain.edits, quality: this.cfg.quality,
-      teams: m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot, name: t.name })),
-      chickens: m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name })),
+      t: 'minit', seed: m.seed, island: m.island, edits: m.terrain.edits, quality: this.cfg.quality, look,
+      teams: m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot, name: t.name, boss: t.boss })),
+      chickens: m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name, scale: c.scale, shield: c.shield, boss: c.boss })),
     };
   }
 
   phaseMsg() {
-    return { t: 'phase', phase: this.phase, results: this.results, island: this.match ? islandTheme(this.match.island).name : '', song: this.match ? islandTheme(this.match.island).song : 0 };
+    return {
+      t: 'phase',
+      phase: this.phase,
+      results: this.results,
+      island: this.match ? islandTheme(this.match.island).name : '',
+      song: this.match ? islandTheme(this.match.island).song : 0,
+      cinema: this.cinema ? this.cinema.view() : null,
+      story: this.match && this.match.story ? this.match.storyView() : null,
+      storyLevel: (this.cfg && this.cfg.storyLevel) || 1,
+      unlockedZorro: this.isZorroUnlocked(),
+    };
   }
 
   quit() {
-    if (this.phase !== 'match') return;
+    if (this.phase !== 'match' && this.phase !== 'cinematic') return;
     this.paused = false;
     this.overT = undefined;
     this.phase = 'results';
@@ -469,7 +770,21 @@ export class GameHost {
 
   next(v) {
     if (this.phase !== 'results') return;
-    if (v === 'again') { this.phase = 'lobby'; this.startMatch(); return; }
+    if (v === 'again') {
+      if (this.cfg.mode === 'historia') {
+        this.retryStory();
+        return;
+      }
+      this.phase = 'lobby'; this.startMatch(); return;
+    }
+    if (v === 'story_next') {
+      this.nextStoryLevel();
+      return;
+    }
+    if (v === 'story_skip') {
+      this.skipStoryLevel();
+      return;
+    }
     this.phase = 'lobby';
     this.match = null;
     this.results = null;
@@ -485,6 +800,36 @@ export class GameHost {
     const m = this.match;
     const sum = m.teamSummary();
     const win = m.over ? m.over.alliance : null;
+
+    if (m.story) {
+      const level = m.story.level;
+      if (m.over && m.over.win) {
+        // Victoria en nivel de historia: cinemática de outro
+        const heroTeam = m.teams.find((t) => t.alliance === 'H' && !t.npc) || m.teams[0];
+        const heroNames = heroTeam.names || ['Pío'];
+        const beats = buildCinematic(level, 'outro', { heroNames, heroColor: heroTeam.color, heroAcc: heroTeam.acc });
+        this.cinema = new Cinema('outro', beats, level.n);
+        this.phase = 'cinematic';
+        this.audio.playSong(islandTheme(level.island).song);
+        this.broadcast(() => this.phaseMsg());
+        this.changed();
+        return;
+      } else {
+        // Derrota en nivel de historia: pantalla de resultados con reintentar / saltar nivel
+        this.results = {
+          title: '¡Misión fallida!',
+          sub: 'Los pollitos de lata ganaron esta batalla. ¿Reintentar o saltar?',
+          story: true, win: false, level: level.n, levelName: level.name,
+          teams: sum.map((t) => ({ ...t, won: false, ...(m.stats[m.teams[t.idx].id] || {}) })),
+        };
+        this.phase = 'results';
+        this.audio.stopSong();
+        this.audio.sfx('lose');
+        this.broadcast(() => this.phaseMsg());
+        this.changed();
+        return;
+      }
+    }
     const winners = sum.filter((t) => t.alliance === win);
     const coop = m.cfg.mode === 'coop';
     let title, sub;
@@ -550,15 +895,65 @@ export class GameHost {
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (dt > 0.1) dt = 0.1;
-    if (this.phase === 'lobby' && this.demo) this.demoStep(dt);
+    this.fpsFrames++;
+    this.fpsTimer += dt;
+    if (this.fpsTimer >= 0.5) {
+      this.fps = Math.round(this.fpsFrames / this.fpsTimer);
+      this.fpsFrames = 0;
+      this.fpsTimer = 0;
+    }
+    if (this.phase === 'match' && this.cfg.quality !== 'ahorro') {
+      if (this.fps > 0 && this.fps < 30) {
+        this.lowFpsTime += dt;
+        if (this.lowFpsTime >= 5.0) {
+          this.lowFpsTime = 0;
+          this.setCfg({ quality: 'ahorro' });
+          this.banner = { text: '⚡ Modo ahorro activado', sub: 'Calidad reducida para mayor fluidez', t: 4.0 };
+          this.changed();
+        }
+      } else {
+        this.lowFpsTime = 0;
+      }
+    }
+    // Si el anfitrión es un celular, pausar la física del demo en el lobby para ahorrar CPU y batería
+    if (this.phase === 'lobby') {
+      if (!this.touch && this.demo) this.demoStep(dt);
+    }
+    else if (this.phase === 'cinematic') this.cinemaStep(dt);
     else if (this.match) this.matchStep(dt);
     if (this.banner) { this.banner.t -= dt; if (this.banner.t <= 0) { this.banner = null; this.changed(); } }
     const m = this.phase === 'lobby' ? this.demo : this.match;
     if (m) {
       const v = m.view();
-      if (this.phase === 'results' || this.phase === 'lobby') v.cam = { m: 'orbit' };
+      if (this.phase === 'cinematic' && this.cinema) {
+        v.cam = this.cinema.camera(m);
+        v.turn = null;
+        v.phase = 'cinematic';
+      } else if (this.phase === 'results' || this.phase === 'lobby') {
+        v.cam = { m: 'orbit' };
+      }
       if (this.phase === 'lobby') v.turn = null;
       this.renderer.draw(v, dt);
+    }
+  }
+
+  cinemaStep(dt) {
+    if (!this.cinema) return;
+    this.cinema.update(dt);
+    if (this.cinema.done) {
+      this.finishCinematic();
+      return;
+    }
+    if (this.match) {
+      this.snapT += dt;
+      if (this.snapT >= 0.05) {
+        this.snapT = 0;
+        const viewers = this.viewers();
+        if (viewers.length) {
+          const snap = { t: 'snap', ...this.match.snapshot(), cam: this.cinema.camera(this.match), cine: this.cinema.view() };
+          for (const p of viewers) this.send(p.slot, snap);
+        }
+      }
     }
   }
 
@@ -630,10 +1025,17 @@ export class GameHost {
       this.infoT = 0;
       const info = m.turnInfo();
       const teams = m.teamSummary();
+      const radar = m.radarInfo();
       this.players.forEach((p, i) => {
         if (!p || p.kind !== 'phone' || !p.connected) return;
         const myTeam = m.teams.find((t) => t.slots.includes(i));
-        const msg = { t: 'turn', info, you: !!(info && !info.cpu && info.slot === i), teams, myTeam: myTeam ? myTeam.idx : -1, inv: myTeam ? myTeam.inv : null, paused: this.paused, sudden: m.sudden };
+        const msg = {
+          t: 'turn', info, you: !!(info && !info.cpu && info.slot === i), teams, radar,
+          myTeam: myTeam ? myTeam.idx : -1, inv: myTeam ? myTeam.inv : null,
+          paused: this.paused, sudden: m.sudden,
+          suddenIn: Math.max(0, Math.ceil(m.cfg.sudden * 60 - m.time)),
+          wind: m.wind,
+        };
         const s = JSON.stringify(msg);
         if (s !== this.lastInfo[i]) { this.lastInfo[i] = s; this.send(i, msg); }
       });

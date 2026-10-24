@@ -37,7 +37,14 @@ export class CpuBrain {
   enemies() {
     const me = this.me();
     const al = this.m.alliance(me.team);
-    return this.m.chickens.filter((c) => c.alive && this.m.alliance(c.team) !== al);
+    const foes = this.m.chickens.filter((c) => c.alive && this.m.alliance(c.team) !== al && !c.npc);
+    if (this.m.story && this.m.story.level.goal === 'machines' && al === 'H') {
+      const machs = this.m.objs.filter((o) => o.kind === 'maquinaLata' && !o.dead).map((o) => ({
+        id: -o.id, x: o.x, y: o.y, z: o.z, hp: o.hp || 60, alive: true, team: -1,
+      }));
+      return machs.length ? machs : foes;
+    }
+    return foes;
   }
 
   // daño que haría una explosión en (x, y, z)
@@ -50,12 +57,26 @@ export class CpuBrain {
       if (!c.alive) continue;
       const d = Math.hypot(c.x - x, c.y + CHICKEN_H * 0.5 - y, c.z - z);
       if (d > RR) continue;
-      const dmg = b.d * mult * (0.35 + 0.65 * (1 - d / RR));
+      let dmg = b.d * mult * (0.35 + 0.65 * (1 - d / RR));
+      if (c.shield) {
+        const dx = x - c.x, dz = z - c.z;
+        const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
+        if (dx * fx + dz * fz > 0.05) dmg = 0;
+      }
       // cerca del agua el empujón vale más
       const nearWater = c.y < this.m.water + 1.6 ? 1.4 : 1;
       if (c === me) s -= dmg * 2.2;
       else if (this.m.alliance(c.team) === al) s -= dmg * 1.6;
       else s += Math.min(dmg, c.hp) * nearWater + (dmg >= c.hp ? 40 : 0);
+    }
+    if (this.m.story && this.m.story.level.goal === 'machines' && al === 'H') {
+      for (const o of this.m.objs) {
+        if (o.dead || o.kind !== 'maquinaLata') continue;
+        const d = Math.hypot(o.x - x, o.y + 0.4 - y, o.z - z);
+        if (d > RR) continue;
+        const dmg = b.d * mult * (0.45 + 0.55 * (1 - d / RR));
+        s += Math.min(dmg, o.hp || 60) * 1.6 + (dmg >= (o.hp || 60) ? 70 : 0);
+      }
     }
     return s;
   }
@@ -116,8 +137,9 @@ export class CpuBrain {
       const b = BOOM[w];
       for (const e of ens) {
         const base = Math.atan2(e.x - me.x, e.z - me.z);
-        for (const dyaw of [0, -0.07, 0.07, -0.16, 0.16]) {
-          if (w !== 'bazuca' && Math.abs(dyaw) > 0.1) continue;
+        const dyaws = e.shield ? [0, -0.12, 0.12, -0.25, 0.25, -0.4, 0.4] : [0, -0.07, 0.07, -0.16, 0.16];
+        for (const dyaw of dyaws) {
+          if (w !== 'bazuca' && Math.abs(dyaw) > 0.2) continue;
           for (let pitch = -0.25; pitch <= 1.35; pitch += 0.1) {
             for (let power = 0.3; power <= 1.001; power += 0.07) {
               const fuse = w === 'oro' ? 3 : 3;
@@ -137,8 +159,10 @@ export class CpuBrain {
     // ataques que eligen un punto
     if (this.level >= 1) {
       for (const e of ens) {
-        if (has('palomas')) consider({ kind: 'target', w: 'palomas', x: e.x - Math.sin(me.yaw) * 0.0, z: e.z, score: this.scoreAt(e.x, e.y + 0.5, e.z, BOOM.regalo, mult) * 1.6 - 20 });
-        if (has('guacamaya')) consider({ kind: 'target', w: 'guacamaya', x: e.x, z: e.z, score: this.scoreAt(e.x, e.y + 0.4, e.z, BOOM.guacamaya, mult) * 0.9 - 12 });
+        const tx = e.shield ? e.x - Math.sin(e.yaw) * 1.6 : e.x;
+        const tz = e.shield ? e.z - Math.cos(e.yaw) * 1.6 : e.z;
+        if (has('palomas')) consider({ kind: 'target', w: 'palomas', x: tx, z: tz, score: this.scoreAt(tx, e.y + 0.5, tz, BOOM.regalo, mult) * 1.8 - 10 });
+        if (has('guacamaya')) consider({ kind: 'target', w: 'guacamaya', x: tx, z: tz, score: this.scoreAt(tx, e.y + 0.4, tz, BOOM.guacamaya, mult) * 1.2 - 8 });
       }
     }
     this.best = best;
@@ -162,6 +186,24 @@ export class CpuBrain {
     if (m.phase !== 'play') return;
 
     if (this.state === 'think') {
+      const me = this.me();
+      const al = this.m.alliance(me.team);
+      if (this.m.story && this.m.story.level.goal === 'eggs' && al === 'H') {
+        const eggs = this.m.objs.filter((o) => o.kind === 'cajaHuevo' && !o.dead);
+        if (eggs.length) {
+          const nearest = eggs.slice().sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+          if (this.walked < 4) {
+            this.state = 'walk'; this.t = 0; this.walked++;
+            this.walkYaw = Math.atan2(nearest.x - me.x, nearest.z - me.z);
+            m.control(inp);
+            return;
+          }
+          this.best = { kind: 'skip', score: 100 };
+          this.startPlan(this.best);
+          m.control(inp);
+          return;
+        }
+      }
       // mientras piensa, gira hacia el enemigo más cercano
       const e = this.enemies()[0];
       if (e) { const d = wrap(Math.atan2(e.x - me.x, e.z - me.z) - me.yaw); if (Math.abs(d) > 0.3) inp.mx = d > 0 ? -0.6 : 0.6; }
@@ -171,7 +213,8 @@ export class CpuBrain {
         if (b.score < 8 && this.walked < 2 && this.enemies().length) {
           this.state = 'walk'; this.t = 0; this.walked++;
           const e2 = this.enemies().sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z))[0];
-          this.walkYaw = Math.atan2(e2.x - me.x, e2.z - me.z) + (this.r() - 0.5) * 0.8;
+          const ang = Math.atan2(e2.x - me.x, e2.z - me.z);
+          this.walkYaw = e2.shield ? ang + (this.r() < 0.5 ? 1.1 : -1.1) : ang + (this.r() - 0.5) * 0.8;
         } else this.startPlan(b);
       }
       m.control(inp);
@@ -180,9 +223,13 @@ export class CpuBrain {
     if (this.state === 'walk') {
       const d = wrap(this.walkYaw - me.yaw);
       if (Math.abs(d) > 0.15) inp.mx = d > 0 ? -1 : 1;
-      else if (this.safeAhead(me)) inp.my = 1;
-      else if (me.ground && this.t > 0.5 && this.r() < 0.05) m.act({ t: 'jump' });
-      if (this.t > 2.6 || T.clock < 12) { this.state = 'think'; this.t = 0; this.gen = this.search(); }
+      else {
+        inp.my = 1;
+        if (me.ground && this.t > 0.3 && (Math.abs(me.vx) < 0.15 && Math.abs(me.vz) < 0.15)) {
+          m.act({ t: 'jump' });
+        }
+      }
+      if (this.t > 2.8 || T.clock < 10) { this.state = 'think'; this.t = 0; this.gen = this.search(); }
       m.control(inp);
       return;
     }

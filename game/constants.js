@@ -55,7 +55,11 @@ export const ACCESSORIES = [
   { id: 'gafas', name: 'Gafas de sol' },
   { id: 'copete', name: 'Copete punk' },
   { id: 'chef', name: 'Gorro de chef' },
+  { id: 'zorro', name: 'Zorro Rufo (monóculo)', unlockable: true },
 ];
+export function availableAccessories(unlockedZorro = false) {
+  return ACCESSORIES.filter((a) => !a.unlockable || unlockedZorro);
+}
 
 // ---- armas ----
 // aim: power (cargar y lanzar), direct (sin potencia), melee (golpe), drop (se deja en el piso),
@@ -98,21 +102,30 @@ export function startAmmo(set) {
   return inv;
 }
 
+export const FP_WEAPONS = ['bazuca', 'granada', 'maiz'];
+export function canFpWeapon(id) { return FP_WEAPONS.includes(id); }
+
 // ---- islas ----
 export const ISLANDS = [
-  { id: 'arenero', name: 'Arenero del Patio' },
-  { id: 'banera', name: 'Bañera Espumosa' },
-  { id: 'cocina', name: 'Cocina Gigante' },
-  { id: 'juguetes', name: 'Cuarto de Juguetes' },
-  { id: 'billar', name: 'Mesa de Billar' },
-  { id: 'castillo', name: 'Castillo del Zorro' },
+  { id: 'arenero', name: 'Arenero del Patio', colors: ['#f6d68c', '#ff5a5f', '#2ec4d6'] },
+  { id: 'banera', name: 'Bañera Espumosa', colors: ['#eaf6ff', '#ffd400', '#ff9ec7'] },
+  { id: 'cocina', name: 'Cocina Gigante', colors: ['#ff8fc7', '#f7d9a0', '#e3172b'] },
+  { id: 'juguetes', name: 'Cuarto de Juguetes', colors: ['#5b7cfa', '#ffd23f', '#ff4757'] },
+  { id: 'billar', name: 'Mesa de Billar', colors: ['#1fa45a', '#7a4a24', '#ffd23f'] },
+  { id: 'castillo', name: 'Castillo del Zorro', colors: ['#4caf50', '#9e9e9e', '#c0392b'] },
 ];
 export const RANDOM_ISLAND = 'aleatoria';
+export function islandName(id) {
+  if (!id || id === RANDOM_ISLAND) return '🎲 Aleatoria';
+  const f = ISLANDS.find((i) => i.id === id);
+  return f ? f.name : '🎲 Aleatoria';
+}
 
 // ---- configuración del lobby ----
 export const MODES = [
   { id: 'versus', name: 'Versus', desc: 'Todos contra todos por turnos' },
   { id: 'coop', name: 'Cooperativo', desc: 'Juntos contra la CPU' },
+  { id: 'historia', name: 'Modo Historia', desc: 'El Gran Robo de los Huevos (8 niveles)' },
 ];
 export const TEAM_MODES = [
   { id: 'solo', name: 'Cada uno su equipo' },
@@ -127,20 +140,35 @@ export const TURN_TIMES = [30, 45, 60];
 export const HP_OPTIONS = [100, 150, 200];
 export const CHICKEN_COUNTS = [2, 3, 4];
 export const SUDDEN_OPTIONS = [5, 10, 15];
+export const PICK_CHICKEN_OPTIONS = [
+  { id: 'auto', name: 'Automático' },
+  { id: 'choose', name: 'Elegir' },
+];
 export const QUALITY = [
   { id: 'alta', name: 'Alta' },
   { id: 'normal', name: 'Normal' },
   { id: 'ahorro', name: 'Ahorro' },
 ];
+export const SENS_OPTIONS = [
+  { id: 'baja', name: 'Baja', rad: 0.0025 },
+  { id: 'media', name: 'Media', rad: 0.004 },
+  { id: 'alta', name: 'Alta', rad: 0.007 },
+];
+export function sensRad(id) {
+  const f = SENS_OPTIONS.find((s) => s.id === id);
+  return f ? f.rad : 0.004;
+}
 
 export const DEFAULT_CFG = {
   mode: 'versus',
+  storyLevel: 1,
   teamMode: 'solo',
   chickens: 4,
   hp: 100,
   turnTime: 45,
   weaponSet: 'clasico',
   island: RANDOM_ISLAND,
+  pickChicken: 'auto',
   sudden: 10,
   cpuTeams: 1,
   cpuLevel: 1,
