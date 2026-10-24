@@ -103,6 +103,10 @@ function accessory(g, acc, team) {
     case 'zorro':
       for (const s of [-1, 1]) P(g, 'cone', '#ff7a1a', [s * 0.17, 1.33, 0], [0.09, 0.2, 0.06], [0, 0, -s * 0.25]);
       P(g, 'torus', '#ff7a1a', [0, 1.16, 0.05], [0.33, 0.33, 0.2], [Math.PI / 2, 0, 0]);
+      // Monóculo dorado en el ojo izquierdo del Zorro Rufo
+      P(g, 'torus', '#ffd700', [-0.13, 1.05, 0.43], [0.09, 0.09, 0.14], [Math.PI / 2, 0, 0], 'metal');
+      P(g, 'cyl', '#ffd700', [-0.04, 1.06, 0.42], [0.015, 0.08, 0.015], [0, 0, Math.PI / 3], 'metal');
+      P(g, 'sphere', '#5ff0ff', [-0.13, 1.05, 0.42], [0.07, 0.07, 0.02], null, 'glow');
       break;
     case 'casco':
     default:
@@ -116,7 +120,7 @@ function accessory(g, acc, team) {
   }
 }
 
-function buildChicken(team, acc, robot) {
+function buildChicken(team, acc, robot, opts = {}) {
   const g = new THREE.Group();
   const head = new THREE.Group();
   const wings = [];
@@ -138,6 +142,22 @@ function buildChicken(team, acc, robot) {
     g.add(head);
     P(g, 'torus', team, [0, 0.78, 0.02], [0.31, 0.31, 0.3], [Math.PI / 2, 0, 0]);
     P(g, 'sphere', dark, [0, 0.72, 0.31], 0.07);
+
+    if (opts.shield) {
+      // Escudo blindado de hierro reforzado con remaches para el Sargento Lata
+      const sg = new THREE.Group();
+      P(sg, 'rbox', '#718096', [0, 0.5, 0.52], [0.72, 0.68, 0.1], null, 'metal');
+      P(sg, 'rbox', '#2d3748', [0, 0.5, 0.55], [0.76, 0.08, 0.12], null, 'metal');
+      P(sg, 'rbox', '#2d3748', [0, 0.5, 0.55], [0.08, 0.72, 0.12], null, 'metal');
+      for (const [rx, ry] of [[-0.3, 0.26], [0.3, 0.26], [-0.3, 0.74], [0.3, 0.74]]) {
+        P(sg, 'sphere', '#ffd23f', [rx, ry, 0.56], 0.04, null, 'metal');
+      }
+      P(sg, 'cyl', '#9aa7b4', [0, 0.5, 0.57], [0.15, 0.04, 0.15], [Math.PI / 2, 0, 0], 'metal');
+      P(sg, 'sphere', '#ff2b3a', [0, 0.5, 0.59], 0.065, null, 'glow');
+      g.add(sg);
+      g.userData.shieldGroup = sg;
+    }
+
     g.userData = { head, wings, eyes: whites, pupils, beakTop, beakLow: null, robot: true };
     return g;
   }
@@ -160,9 +180,9 @@ function buildChicken(team, acc, robot) {
 }
 
 // pollito listo para la escena: grupo con el cuerpo (que se anima) y el arma
-export function makeChicken(team, acc, robot) {
+export function makeChicken(team, acc, robot, opts = {}) {
   const root = new THREE.Group();
-  const body = buildChicken(team, acc, robot);
+  const body = buildChicken(team, acc, robot, opts);
   root.add(body);
   const gun = new THREE.Group();
   P(gun, 'cyl', '#5d6873', [0, 0, 0.22], [0.075, 0.62, 0.075], [Math.PI / 2, 0, 0], 'metal');

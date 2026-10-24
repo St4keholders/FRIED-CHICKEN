@@ -212,30 +212,54 @@ export class Renderer {
 
   // ---------------- mundo ----------------
   // teams: [{ color, dark, acc, robot }]; chickens: [{ id, team, name }]
-  setWorld(terrain, teams, chickens) {
+  setWorld(terrain, teams, chickens, opts = {}) {
     this.clearWorld();
     this.terrain = terrain;
     const th = terrain.theme;
     this.theme = th;
-    this.scene.background = skyTexture(th.sky[0], th.sky[1]);
-    this.scene.fog = new THREE.Fog(th.fog, 70, 190);
-    this.hemi.color.set(th.sky[1]);
+    const look = (opts && opts.look) || terrain.look || 'dia';
+    let skyTop = th.sky[0], skyBot = th.sky[1], fogCol = th.fog;
+    let sunCol = 0xfff4e0, sunInt = 1.9, hemiCol = th.sky[1], hemiGround = 0x8a6a4a;
+    if (look === 'noche') {
+      skyTop = '#060a14';
+      skyBot = '#101a2e';
+      fogCol = '#0d182b';
+      sunCol = 0x8aa8d0;
+      sunInt = 1.0;
+      hemiCol = 0x3d5475;
+      hemiGround = 0x141a24;
+    } else if (look === 'atardecer') {
+      skyTop = '#3a1338';
+      skyBot = '#ff6b35';
+      fogCol = '#9e3d2a';
+      sunCol = 0xff9944;
+      sunInt = 1.75;
+      hemiCol = 0xff7b47;
+      hemiGround = 0x5a2d1d;
+    }
+    this.scene.background = skyTexture(skyTop, skyBot);
+    this.scene.fog = new THREE.Fog(fogCol, 70, 190);
+    this.hemi.color.set(hemiCol);
+    this.hemi.groundColor.set(hemiGround);
+    this.sun.color.set(sunCol);
+    this.sun.intensity = sunInt;
     this.tmesh = new TerrainMesh(terrain, this.scene, { shadows: this.shadows });
     // agua con olas
     const wg = new THREE.PlaneGeometry(320, 320, 56, 56);
     wg.rotateX(-Math.PI / 2);
     this.waterGeo = wg;
     this.waterBase = Float32Array.from(wg.attributes.position.array);
-    this.water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: th.water, transparent: true, opacity: 0.82, shininess: 90, specular: 0x666666 }));
+    const waterCol = look === 'noche' ? 0x102035 : look === 'atardecer' ? 0x6e2c38 : th.water;
+    this.water = new THREE.Mesh(wg, new THREE.MeshPhongMaterial({ color: waterCol, transparent: true, opacity: 0.82, shininess: 90, specular: 0x666666 }));
     this.water.receiveShadow = this.shadows;
     this.water.position.set(WORLD_X / 2, th.waterVox * VOX, WORLD_Z / 2);
     this.scene.add(this.water);
-    this.seabed = new THREE.Mesh(new THREE.PlaneGeometry(320, 320).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(th.water).multiplyScalar(0.45) }));
+    this.seabed = new THREE.Mesh(new THREE.PlaneGeometry(320, 320).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(waterCol).multiplyScalar(0.45) }));
     this.seabed.position.set(WORLD_X / 2, 0.02, WORLD_Z / 2);
     this.scene.add(this.seabed);
     // montañas lejanas entre la neblina
     this.far = new THREE.Group();
-    const fm = new THREE.MeshLambertMaterial({ color: new THREE.Color(th.fog).lerp(new THREE.Color(th.palette[1]), 0.35) });
+    const fm = new THREE.MeshLambertMaterial({ color: new THREE.Color(fogCol).lerp(new THREE.Color(th.palette[1]), look === 'noche' ? 0.15 : 0.35) });
     const fg = new THREE.SphereGeometry(1, 20, 12);
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2 + Math.random() * 0.2;
@@ -248,7 +272,9 @@ export class Renderer {
     this.scene.add(this.far);
     // nubes redondas
     this.clouds = new THREE.Group();
-    const cm = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xb8c4d0 });
+    const cloudColor = look === 'noche' ? '#1c2838' : look === 'atardecer' ? '#ffc299' : 0xffffff;
+    const cloudEmissive = look === 'noche' ? '#0d141e' : look === 'atardecer' ? '#803a22' : 0xb8c4d0;
+    const cm = new THREE.MeshLambertMaterial({ color: cloudColor, emissive: cloudEmissive });
     const cg = new THREE.SphereGeometry(1, 16, 10);
     for (let i = 0; i < 9; i++) {
       const c = new THREE.Group();
@@ -268,20 +294,24 @@ export class Renderer {
     this.teamsMeta = teams;
     for (const c of chickens) {
       const t = teams[c.team];
-      const obj = makeChicken(t.color, t.acc, t.robot);
+      const scale = c.scale || (t && t.boss ? (t.boss.scale || 1.7) : 1);
+      const shield = c.shield || !!(t && t.boss && t.boss.shield);
+      const obj = makeChicken(t.color, t.acc, t.robot, { shield });
+      obj.scale.setScalar(scale);
       this.scene.add(obj);
       const sh = new THREE.Mesh(this.shadowGeo, this.shadowMat);
       sh.rotation.x = -Math.PI / 2;
+      sh.scale.setScalar(scale);
       this.scene.add(sh);
-      const umb = makeObject('sombrilla', 0.75);
-      umb.position.y = 2.0; umb.visible = false;
+      const umb = makeObject('sombrilla', 0.75 * scale);
+      umb.position.y = 2.0 * scale; umb.visible = false;
       obj.add(umb);
       const lbl = document.createElement('div');
       lbl.className = 'lbl';
       lbl.style.setProperty('--tc', t.color);
       lbl.innerHTML = `<span class="ln"></span><span class="lh"></span>`;
       this.overlay.appendChild(lbl);
-      this.chickens.set(c.id, { obj, sh, umb, lbl, name: c.name, team: c.team, hp: -1, shown: false });
+      this.chickens.set(c.id, { obj, sh, umb, lbl, name: c.name, team: c.team, scale, shield, hp: -1, shown: false });
       lbl.querySelector('.ln').textContent = c.name;
     }
     this.marker = document.createElement('div');
@@ -456,6 +486,8 @@ export class Renderer {
       const vis = s.alive || s.dying;
       obj.visible = !!vis; sh.visible = !!vis;
       if (!vis) { c.lbl.style.display = 'none'; continue; }
+      const sc = s.scale || c.scale || 1;
+      obj.scale.setScalar(sc);
       let ry = s.y;
       if (!s.air) { const gy0 = this.terrain.surfaceY(s.x, s.z, s.y + 0.7); if (Math.abs(gy0 - s.y) < 0.5) ry = gy0; }
       obj.position.set(s.x, ry, s.z);
@@ -572,13 +604,13 @@ export class Renderer {
       const gy = this.groundBelow(s.x, s.y + 0.2, s.z);
       sh.position.set(s.x, gy + 0.03, s.z);
       const hgt = Math.max(0, s.y - gy);
-      sh.scale.setScalar(Math.max(0.3, 1 - hgt * 0.08));
+      sh.scale.setScalar(sc * Math.max(0.3, 1 - hgt * 0.08));
       sh.visible = gy > -50 && !this.shadows;
       // jetpack
       if (s.jet && Math.random() < 0.8) this.parts.add({ x: s.x - Math.sin(s.yaw) * 0.4, y: s.y + 0.3, z: s.z - Math.cos(s.yaw) * 0.4, vx: 0, vy: -4, vz: 0, size: 0.16, color: Math.random() < 0.5 ? '#ffb020' : '#ff5a1f', life: 0.35, grav: 0, shrink: true });
       // etiqueta
       if (c.hp !== s.hp) { c.hp = s.hp; c.lbl.querySelector('.lh').textContent = s.hp; }
-      const p = this.project(s.x, ry + CHICKEN_H + 0.3, s.z);
+      const p = this.project(s.x, ry + CHICKEN_H * sc + 0.3, s.z);
       if (p && s.alive && !(isFp && s.id === active)) {
         c.lbl.style.display = '';
         c.lbl.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;

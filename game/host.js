@@ -493,7 +493,13 @@ export class GameHost {
   }
 
   setWorldFrom(m) {
-    this.renderer.setWorld(m.terrain, m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot })), m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name })));
+    const look = (m.story && m.story.level && m.story.level.look) || 'dia';
+    this.renderer.setWorld(
+      m.terrain,
+      m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot, boss: t.boss })),
+      m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name, scale: c.scale, shield: c.shield, boss: c.boss })),
+      { look }
+    );
   }
 
   // ---------------- partida ----------------
@@ -557,10 +563,11 @@ export class GameHost {
 
   initMsg() {
     const m = this.match;
+    const look = (m.story && m.story.level && m.story.level.look) || 'dia';
     return {
-      t: 'minit', seed: m.seed, island: m.island, edits: m.terrain.edits, quality: this.cfg.quality,
-      teams: m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot, name: t.name })),
-      chickens: m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name })),
+      t: 'minit', seed: m.seed, island: m.island, edits: m.terrain.edits, quality: this.cfg.quality, look,
+      teams: m.teams.map((t) => ({ color: t.color, dark: t.dark, acc: t.acc, robot: t.robot, name: t.name, boss: t.boss })),
+      chickens: m.chickens.map((c) => ({ id: c.id, team: c.team, name: c.name, scale: c.scale, shield: c.shield, boss: c.boss })),
     };
   }
 

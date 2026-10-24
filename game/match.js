@@ -47,6 +47,11 @@ export class Match {
       // munición limitada para los pollitos de los jugadores
       for (const t of this.teams) if (t.alliance === 'H' && !t.npc) for (const [k, v] of Object.entries(story.ammo)) t.inv[k] = v;
     }
+    for (const t of this.teams) {
+      if (t.boss) {
+        t.inv = { bazuca: 99, granada: 99, escopeta: 99, maiz: 99, oro: 99, guacamaya: 99, palomas: 99, mina: 99, dinamita: 99, chancla: 99, picotazo: 99 };
+      }
+    }
     for (const t of this.teams) this.stats[t.id] = { dmg: 0, self: 0, drown: 0, kills: 0 };
     // aparecer pollitos
     const per = cfg.chickens;
@@ -59,12 +64,16 @@ export class Match {
     let n = 0;
     const addChicken = (t, name, p, extra = {}) => {
       const hp = t.hp !== undefined ? t.hp : cfg.hp;
+      const boss = !!t.boss;
+      const scale = boss ? (t.boss.scale || 1.7) : 1;
+      const shield = boss ? !!t.boss.shield : false;
+      const bossId = boss ? (t.boss.id || 'boss') : null;
       this.chickens.push({
         id: this.chickens.length, team: t.idx, name,
         x: p.x, y: p.y, z: p.z, vx: 0, vy: 0, vz: 0, yaw: this.r() * Math.PI * 2,
         hp, maxHp: hp, alive: true, ground: false, air: true, knock: false, peakY: p.y, walk: 0,
         dying: 0, rope: null, jet: 0, umbrella: false, hurtT: 0, backflip: 0,
-        npc: t.npc || null, boss: !!t.boss, scale: t.boss ? (t.boss.scale || 1.7) : 1,
+        npc: t.npc || null, boss, bossId, scale, shield, phase: 1,
         ...extra,
       });
     };
@@ -474,6 +483,20 @@ export class Match {
       case 'rendirse': break; // se confirma en el mando
       default: break;
     }
+    // Zorro Rufo en fase 2 y 3 lanza piezas de juguete adicionales al disparar
+    if (ch.bossId === 'zorro' && ch.phase >= 2 && ['bazuca', 'granada', 'maiz', 'oro', 'escopeta', 'picotazo', 'chancla', 'vela', 'mina'].includes(w.id)) {
+      const extra = ch.phase === 3 ? 2 : 1;
+      for (let p = 0; p < extra; p++) {
+        const ang = ch.yaw + (this.r() - 0.5) * 1.5;
+        const sp = 6 + this.r() * 6;
+        this.addObj({
+          kind: 'granada', proj: true,
+          x: ch.x + Math.sin(ang) * 0.9, y: ch.y + 1.6, z: ch.z + Math.cos(ang) * 0.9,
+          vx: Math.sin(ang) * sp, vy: 5 + this.r() * 4, vz: Math.cos(ang) * sp,
+          fuse: 2.2, age: 0, yaw: ang, src: ch.id, dd: 1,
+        });
+      }
+    }
   }
 
   ray(x, y, z, d, max) {
@@ -509,7 +532,7 @@ export class Match {
       any = true;
       if (kind === 'chancla') this.knock(c, fx * 15, 7, fz * 15);
       else this.knock(c, fx * 2, 13, fz * 2);
-      this.damage(c, 30 * dd, team);
+      this.damage(c, 30 * dd, team, { src: { x: ch.x, y: ch.y, z: ch.z } });
     }
     for (const o of this.objs) {
       if (o.dead || o.kind !== 'maquinaLata') continue;
@@ -536,15 +559,56 @@ export class Match {
     if (!c.alive || amount <= 0) return;
     const victimTeam = c.team;
     if (team !== undefined && team !== null && team !== victimTeam && this.alliance(team) === this.alliance(victimTeam) && !this.cfg.friendly) return;
+
+    // Escudo frontal (Sargento Lata): solo vulnerable por la espalda
+    if (c.shield && opts.src) {
+      const dx = opts.src.x - c.x, dz = opts.src.z - c.z;
+      const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
+      const dot = dx * fx + dz * fz;
+      if (dot > 0.05) {
+        this.emit({ k: 'sfx', s: 'shotgun' });
+        this.emit({ k: 'feathers', x: c.x + fx * 0.8, y: c.y + 1.0, z: c.z + fz * 0.8, color: '#c3ccd6' });
+        this.emit({ k: 'dmg', id: c.id, n: 0, x: c.x, y: c.y + H * (c.scale || 1) + 0.4, z: c.z, shield: true });
+        this.say(c, 'sargento', '¡JA! ¡Por delante mi escudo es impenetrable!');
+        return;
+      } else {
+        this.emit({ k: 'sfx', s: 'hit' });
+        this.say(c, 'hurt', '¡Ay, por detrás no vale!');
+      }
+    }
+
     amount = Math.round(amount);
     if (amount <= 0) return;
     c.hp = Math.max(0, c.hp - amount);
     c.hurtT = 0.6;
-    this.emit({ k: 'dmg', id: c.id, n: amount, x: c.x, y: c.y + H + 0.4, z: c.z });
+    const sc = c.scale || 1;
+    this.emit({ k: 'dmg', id: c.id, n: amount, x: c.x, y: c.y + H * sc + 0.4, z: c.z });
     if (team !== undefined && team !== null && this.stats[this.teams[team].id]) {
       if (team === victimTeam) this.stats[this.teams[team].id].self += amount;
       else this.stats[this.teams[team].id].dmg += amount;
     }
+
+    // Fases del Zorro Rufo: suelta piezas de juguete al cruzar umbrales de vida
+    if (c.bossId === 'zorro' && c.alive && c.hp > 0) {
+      if (c.phase === 1 && c.hp <= 250) {
+        c.phase = 2;
+        this.emit({ k: 'boom', x: c.x, y: c.y + 1.1, z: c.z, r: 0.8 });
+        this.emit({ k: 'feathers', x: c.x, y: c.y + 1.2, z: c.z, color: '#ff7a1a' });
+        for (let i = 0; i < 2; i++) {
+          this.addObj({ kind: 'mina', x: c.x + (this.r() - 0.5) * 4, y: c.y + 1.5, z: c.z + (this.r() - 0.5) * 4, armed: 1, t: 0 });
+        }
+        this.say(c, 'hurt', '¡Grrr! ¡Piezas de juguete, al ataque! ¡Fase 2!');
+      } else if (c.phase === 2 && c.hp <= 120) {
+        c.phase = 3;
+        this.emit({ k: 'boom', x: c.x, y: c.y + 1.2, z: c.z, r: 1.1 });
+        this.emit({ k: 'feathers', x: c.x, y: c.y + 1.2, z: c.z, color: '#ff2244' });
+        for (let i = 0; i < 3; i++) {
+          this.addObj({ kind: 'mina', x: c.x + (this.r() - 0.5) * 5, y: c.y + 2.0, z: c.z + (this.r() - 0.5) * 5, armed: 1, t: 0 });
+        }
+        this.say(c, 'hurt', '¡Alerta máxima! ¡Modo descontrol activado!');
+      }
+    }
+
     if (c.hp <= 0) {
       c.killer = team;
       this.say(c, 'dead');
@@ -572,7 +636,7 @@ export class Match {
       let kx = dx * n, kz = dz * n;
       if (opts.push) { kx += opts.push.x * 0.8; kz += opts.push.z * 0.8; }
       this.knock(c, kx * kick, (0.55 + Math.max(0, dy * n)) * kick, kz * kick);
-      this.damage(c, amount, team);
+      this.damage(c, amount, team, { src: { x, y, z }, ...opts });
     }
     for (const o of this.objs) {
       if (o.dead) continue;

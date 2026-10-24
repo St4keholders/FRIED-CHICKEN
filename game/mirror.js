@@ -28,7 +28,7 @@ export class MirrorView {
     this.terrain = new Terrain(m.seed, m.island);
     for (const e of m.edits || []) this.terrain.applyEdit(e);
     this.terrain.dirty.clear();
-    this.renderer.setWorld(this.terrain, m.teams, m.chickens);
+    this.renderer.setWorld(this.terrain, m.teams, m.chickens, { look: m.look });
     this.snaps = [];
   }
 
@@ -58,8 +58,10 @@ export class MirrorView {
     const chickens = b.ch.map((c, i) => {
       const p = a.ch[i] || c;
       const f = c[5];
+      const meta = (this.init && this.init.chickens && this.init.chickens[i]) || {};
       return {
         id: i, x: lerp(p[0], c[0], t), y: lerp(p[1], c[1], t), z: lerp(p[2], c[2], t), yaw: lerpAng(p[3], c[3], t), hp: c[4],
+        scale: meta.scale || 1, shield: meta.shield || false, boss: meta.boss || false,
         alive: !!(f & 1), air: !!(f & 2), walking: !!(f & 4), rope: f & 8 ? c[6] : null, jet: !!(f & 16), umbrella: !!(f & 32), dying: !!(f & 64), hurt: !!(f & 128), backflip: !!(f & 256),
       };
     });

@@ -57,7 +57,12 @@ export class CpuBrain {
       if (!c.alive) continue;
       const d = Math.hypot(c.x - x, c.y + CHICKEN_H * 0.5 - y, c.z - z);
       if (d > RR) continue;
-      const dmg = b.d * mult * (0.35 + 0.65 * (1 - d / RR));
+      let dmg = b.d * mult * (0.35 + 0.65 * (1 - d / RR));
+      if (c.shield) {
+        const dx = x - c.x, dz = z - c.z;
+        const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
+        if (dx * fx + dz * fz > 0.05) dmg = 0;
+      }
       // cerca del agua el empujón vale más
       const nearWater = c.y < this.m.water + 1.6 ? 1.4 : 1;
       if (c === me) s -= dmg * 2.2;

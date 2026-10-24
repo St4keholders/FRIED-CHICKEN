@@ -408,5 +408,73 @@ function winStory(n, tries = 4) {
   if (!t12bOk) fails++;
   console.log(`${t12bOk ? 'OK ' : 'MAL'} historia niveles 3 y 5 (modelos 3D ${modelsOk}, huevitos nivel 3 ${l3Ok}, máquinas nivel 5 ${l5Ok})`);
 }
+
+// 12) niveles 6 y 8: jefes Sargento Lata (escudo frontal) y Zorro Rufo (fases y piezas)
+{
+  // Nivel 6: Sargento Lata en Castillo de noche
+  const s6 = storyMatch(6, 61, null);
+  const boss6 = s6.m.chickens.find((c) => c.boss && c.bossId === 'sargento');
+  const b6Attrs = !!boss6 && boss6.hp === 260 && boss6.scale === 1.7 && boss6.shield === true;
+  const l6Level = levelById(6);
+  const b6Look = l6Level.look === 'noche';
+
+  // Probar escudo frontal de Sargento Lata:
+  // Orientamos al jefe mirando hacia adelante (yaw = 0, adelante es +z)
+  boss6.yaw = 0;
+  // Ataque frontal: origen del ataque en frente (dz > 0)
+  const hpBeforeFront = boss6.hp;
+  s6.m.explode(boss6.x, boss6.y + 0.5, boss6.z + 3, 2.5, 40, 0);
+  const frontBlocked = boss6.hp === hpBeforeFront;
+
+  // Ataque por la espalda: origen del ataque detrás (dz < 0)
+  s6.m.explode(boss6.x, boss6.y + 0.5, boss6.z - 3, 2.5, 40, 0);
+  const backDamaged = boss6.hp < hpBeforeFront;
+
+  // Derrotar al Sargento Lata por la espalda -> victoria del nivel 6
+  while (boss6.hp > 0) {
+    s6.m.explode(boss6.x, boss6.y + 0.5, boss6.z - 2, 5.0, 100, 0);
+  }
+  s6.m.afterSettle();
+  for (let i = 0; i < 40 && boss6.alive; i++) s6.m.update(0.1);
+  s6.m.checkOver();
+  const l6Win = !boss6.alive && s6.m.phase === 'over' && s6.m.over.win === true;
+  const l6Ok = b6Attrs && b6Look && frontBlocked && backDamaged && l6Win;
+
+  // Nivel 8: Zorro Rufo en Castillo con 3 fases y lanzamiento de piezas
+  const s8 = storyMatch(8, 81, null);
+  const boss8 = s8.m.chickens.find((c) => c.boss && c.bossId === 'zorro');
+  const b8Attrs = !!boss8 && boss8.hp === 380 && boss8.scale === 1.9 && boss8.shield === false && boss8.phase === 1;
+
+  // Bajar vida a 240 -> pasa a fase 2 y suelta piezas
+  const objsBefore = s8.m.objs.length;
+  s8.m.damage(boss8, 140, 0, { src: { x: boss8.x, y: boss8.y, z: boss8.z - 2 } });
+  const p2Ok = boss8.phase === 2 && s8.m.objs.length > objsBefore;
+
+  // Bajar vida a 100 -> pasa a fase 3 y suelta más piezas
+  const objsBeforeP3 = s8.m.objs.length;
+  s8.m.damage(boss8, 140, 0, { src: { x: boss8.x, y: boss8.y, z: boss8.z - 2 } });
+  const p3Ok = boss8.phase === 3 && s8.m.objs.length > objsBeforeP3;
+
+  // Disparo del Zorro Rufo en fase 3 lanza piezas de juguete extra
+  s8.m.turn = { ch: boss8.id, team: boss8.team, weapon: 'bazuca', mode: 'walk', clock: 30, shots: 0, power: 1 };
+  const projsBefore = s8.m.objs.filter((o) => o.proj).length;
+  s8.m.fire(1);
+  const projsAfter = s8.m.objs.filter((o) => o.proj).length;
+  const extraPiecesOk = projsAfter >= projsBefore + 2; // bazuca + al menos 2 piezas
+
+  // Derrota del Zorro Rufo -> victoria final
+  while (boss8.hp > 0) {
+    s8.m.damage(boss8, 100, 0, { src: { x: boss8.x, y: boss8.y, z: boss8.z } });
+  }
+  s8.m.afterSettle();
+  for (let i = 0; i < 40 && boss8.alive; i++) s8.m.update(0.1);
+  s8.m.checkOver();
+  const l8Win = !boss8.alive && s8.m.phase === 'over' && s8.m.over.win === true;
+  const l8Ok = b8Attrs && p2Ok && p3Ok && extraPiecesOk && l8Win;
+
+  const t12cOk = l6Ok && l8Ok;
+  if (!t12cOk) fails++;
+  console.log(`${t12cOk ? 'OK ' : 'MAL'} historia niveles 6 y 8 (Sargento Lata ${l6Ok}, Zorro Rufo ${l8Ok})`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);
