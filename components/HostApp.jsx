@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, islandName } from '../game/constants';
+import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, lookName, islandName } from '../game/constants';
 import { sha256 } from '../game/sha256';
 import { peerParamsString } from '../game/peeropts';
 import { chickenPortrait } from '../game/render';
@@ -39,7 +39,7 @@ function SlotCard({ p, i, onRemove, canRemove, shared }) {
     );
   }
   const c = TEAM_COLORS[p.color];
-  const acc = ACCESSORIES.find((a) => a.id === p.acc);
+  const acc = { name: lookName(p.acc) };
   const kind = p.kind === 'local' ? 'Este celular' : p.kind === 'kb' ? 'Teclado' : p.connected ? 'Celular' : 'Desconectado';
   return (
     <div className="card slot" style={{ '--tc': c.hex }}>

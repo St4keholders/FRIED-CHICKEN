@@ -38,7 +38,8 @@ export const TEAM_NAMES = [
   'Los Crocantes', 'Alitas Bravas', 'Pechugas de Acero', 'Los Nuggets', 'Muslos de Hierro', 'Pío Pío Squad',
   'Los Emplumados', 'Cresta Brava', 'Huevos Revueltos', 'Los Desplumados', 'La Banda del Maíz', 'Picos de Oro',
 ];
-export const CPU_TEAM_NAMES = ['Pollitos de Lata', 'Robo-Pollos', 'Latas Locas'];
+export const CPU_TEAM_NAMES = ['Gallos Peleones', 'Los Plumíferos', 'Pío Mafia', 'Alas Locas', 'Los Cacareadores', 'Espolones de Oro'];
+export const CPU_CHICKEN_NAMES = ['Bigotes', 'Rambo', 'Don Pollo', 'Gallardo', 'Turuleca', 'Cacareo', 'Pancho', 'Crestón', 'Panchita', 'Espolón', 'Kikirikí', 'Plumas', 'Cocorocó', 'Mostaza', 'Chicharrón', 'Morocho'];
 
 export const CHICKEN_NAMES = [
   'Pío', 'Huevito', 'Plumón', 'Kiki', 'Tostado', 'Nugget', 'Crispy', 'Pechuga', 'Chispita', 'Maicito',
@@ -46,19 +47,76 @@ export const CHICKEN_NAMES = [
 ];
 export const ROBOT_NAMES = ['Tuerca', 'Tornillo', 'Latón', 'Chatarra', 'Bujía', 'Resorte', 'Clavo', 'Pistón', 'Voltio', 'Remache', 'Engranaje', 'Chip'];
 
-export const ACCESSORIES = [
+// Apariencia: cada pollito combina una pieza de CABEZA, una de CARA y una BARBA.
+// Se guarda como texto "cabeza|cara|barba" (por ejemplo "vaquero|antifaz|bigote").
+export const HEADS = [
+  { id: 'ninguno', name: 'Sin nada' },
   { id: 'casco', name: 'Casco' },
   { id: 'vueltiao', name: 'Sombrero vueltiao' },
   { id: 'gorra', name: 'Gorra' },
   { id: 'corona', name: 'Corona' },
   { id: 'bandana', name: 'Bandana' },
-  { id: 'gafas', name: 'Gafas de sol' },
-  { id: 'copete', name: 'Copete punk' },
   { id: 'chef', name: 'Gorro de chef' },
+  { id: 'vaquero', name: 'Vaquero' },
+  { id: 'pirata', name: 'Pirata' },
+  { id: 'mago', name: 'Mago' },
+  { id: 'vikingo', name: 'Vikingo' },
+  { id: 'fiesta', name: 'Gorro de fiesta' },
+  { id: 'afro', name: 'Afro' },
+  { id: 'mohicano', name: 'Mohicano arcoíris' },
+  { id: 'copete', name: 'Cresta punk' },
+  { id: 'tupe', name: 'Tupé rockero' },
+  { id: 'colita', name: 'Colita' },
   { id: 'zorro', name: 'Zorro Rufo (monóculo)', unlockable: true },
 ];
+export const FACES = [
+  { id: 'ninguna', name: 'Cara limpia' },
+  { id: 'gafas', name: 'Gafas de sol' },
+  { id: 'lentes', name: 'Lentes de nerd' },
+  { id: 'luchador', name: 'Máscara de luchador' },
+  { id: 'antifaz', name: 'Antifaz de héroe' },
+  { id: 'parche', name: 'Parche de pirata' },
+  { id: 'payaso', name: 'Nariz de payaso' },
+];
+export const BEARDS = [
+  { id: 'ninguna', name: 'Sin barba' },
+  { id: 'bigote', name: 'Bigote' },
+  { id: 'frances', name: 'Bigote francés' },
+  { id: 'barba', name: 'Barba larga' },
+  { id: 'blanca', name: 'Barba de abuelo' },
+  { id: 'candado', name: 'Candado' },
+  { id: 'patillas', name: 'Patillas' },
+];
+// compatibilidad: la lista vieja de "accesorios" es la de cabeza
+export const ACCESSORIES = HEADS;
 export function availableAccessories(unlockedZorro = false) {
-  return ACCESSORIES.filter((a) => !a.unlockable || unlockedZorro);
+  return HEADS.filter((a) => !a.unlockable || unlockedZorro);
+}
+export function parseLook(acc) {
+  const s = String(acc || 'casco');
+  if (s.includes('|')) {
+    const [head, face, beard] = s.split('|');
+    return { head: head || 'ninguno', face: face || 'ninguna', beard: beard || 'ninguna' };
+  }
+  if (FACES.some((f) => f.id === s && f.id !== 'ninguna')) return { head: 'ninguno', face: s, beard: 'ninguna' };
+  return { head: s, face: 'ninguna', beard: 'ninguna' };
+}
+export function composeLook({ head = 'ninguno', face = 'ninguna', beard = 'ninguna' }) { return `${head}|${face}|${beard}`; }
+export function validLook(acc, unlockedZorro = false) {
+  const l = parseLook(acc);
+  return availableAccessories(unlockedZorro).some((h) => h.id === l.head) && FACES.some((f) => f.id === l.face) && BEARDS.some((b) => b.id === l.beard);
+}
+export function lookName(acc) {
+  const l = parseLook(acc);
+  const parts = [HEADS.find((h) => h.id === l.head), FACES.find((f) => f.id === l.face), BEARDS.find((b) => b.id === l.beard)]
+    .filter((x) => x && !['ninguno', 'ninguna'].includes(x.id)).map((x) => x.name);
+  return parts.length ? parts.join(' · ') : 'Sin accesorios';
+}
+// apariencia al azar (para la CPU)
+export function randomLook(r = Math.random) {
+  const pick = (list, none) => (r() < none ? list[0] : list[1 + Math.floor(r() * (list.length - 1))]);
+  const heads = HEADS.filter((h) => !h.unlockable);
+  return composeLook({ head: pick(heads, 0.08).id, face: pick(FACES, 0.5).id, beard: pick(BEARDS, 0.4).id });
 }
 
 // ---- armas ----
@@ -77,6 +135,11 @@ export const WEAPONS = [
   { id: 'gallina', name: 'Mamá Gallina', icon: '🐔', ammo: 1, aim: 'drop', desc: 'Corre sola; dispara otra vez para detonarla' },
   { id: 'oro', name: 'Huevo de Oro', icon: '🌟', ammo: 1, aim: 'power', desc: '¡Aleluyaaa! Explosión enorme' },
   { id: 'guacamaya', name: 'Guacamaya Teledirigida', icon: '🦜', ammo: 1, aim: 'targetpower', desc: 'Marca el objetivo y lánzala' },
+  { id: 'platano', name: 'Bomba de Plátano Maduro', icon: '🍌', ammo: 1, aim: 'power', fuse: true, desc: 'Revienta en 5 plátanos que vuelven a explotar' },
+  { id: 'supergallina', name: 'Súper Gallina', icon: '🦸', ammo: 1, aim: 'direct', desc: 'Vuela y la manejas tú; dispara otra vez para estallarla' },
+  { id: 'vaca', name: 'Vaca de Concreto', icon: '🐄', ammo: 1, aim: 'target', desc: 'Cae del cielo y rebota aplastando todo' },
+  { id: 'aji', name: 'Ají Lanzallamas', icon: '🌶️', ammo: 2, aim: 'direct', hold: true, desc: 'Mantén DISPARAR: fuego que quema' },
+  { id: 'metralleta', name: 'Metralleta de Maíz', icon: '🌾', ammo: 2, aim: 'direct', desc: 'Ráfaga de 14 granos explosivos' },
   { id: 'cuerda', name: 'Cuerda de Lombriz', icon: '➰', ammo: 3, aim: 'direct', util: true, desc: 'Engánchate y balancéate' },
   { id: 'ventilador', name: 'Ventilador a la Espalda', icon: '🌀', ammo: 2, aim: 'none', util: true, desc: 'Vuela con combustible limitado' },
   { id: 'sombrilla', name: 'Sombrilla', icon: '☂️', ammo: 3, aim: 'none', util: true, desc: 'Cae despacio' },
@@ -93,16 +156,26 @@ export const WEAPON_SETS = [
   { id: 'locura', name: 'Locura' },
 ];
 
+// Clásico (como Worms 4): se empieza con lo básico y lo bueno sale de las cajas
+export const CLASSIC_START = { maiz: 1, chancla: 1, cuerda: 2, sombrilla: 1, teleport: 1, viga: 1, mina: 1, vela: 1 };
 export function startAmmo(set) {
   const inv = {};
   for (const w of WEAPONS) {
     if (w.ammo < 0) inv[w.id] = -1;
-    else inv[w.id] = set === 'locura' ? Math.max(4, w.ammo * 3) : w.ammo;
+    else if (set === 'locura') inv[w.id] = Math.max(4, w.ammo * 3);
+    else if (set === 'historia') inv[w.id] = ['platano', 'supergallina', 'vaca', 'aji', 'metralleta'].includes(w.id) ? 0 : w.ammo;
+    else inv[w.id] = CLASSIC_START[w.id] || 0;
   }
   return inv;
 }
+// qué puede salir en una caja de armas: [arma, peso, cantidad mínima, cantidad máxima]
+export const CRATE_WEAPONS = [
+  ['oro', 5, 1, 1], ['vaca', 7, 1, 1], ['supergallina', 9, 1, 2], ['platano', 9, 1, 2], ['gallina', 9, 1, 2],
+  ['palomas', 9, 1, 2], ['guacamaya', 8, 1, 2], ['aji', 9, 1, 2], ['metralleta', 9, 1, 2], ['maiz', 8, 2, 3],
+  ['vela', 6, 1, 3], ['mina', 6, 2, 3], ['chancla', 5, 1, 2], ['ventilador', 5, 1, 2], ['teleport', 4, 1, 2],
+];
 
-export const FP_WEAPONS = ['bazuca', 'granada', 'maiz'];
+export const FP_WEAPONS = ['bazuca', 'granada', 'maiz', 'platano'];
 export function canFpWeapon(id) { return FP_WEAPONS.includes(id); }
 
 // ---- islas ----

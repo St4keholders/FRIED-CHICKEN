@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { chickenPortrait } from '../game/render';
-import { ACCESSORIES, availableAccessories, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, WORLD_X, WORLD_Z, weaponById, canFpWeapon } from '../game/constants';
+import { ACCESSORIES, availableAccessories, FACES, BEARDS, parseLook, composeLook, randomLook, lookName, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, WORLD_X, WORLD_Z, weaponById, canFpWeapon } from '../game/constants';
 import { LEVELS } from '../game/story';
 
 function Seg({ value, options, onChange, disabled }) {
@@ -411,6 +411,10 @@ export function MyChicken({ me, slot, players, cfg, onPick, unlockedZorro = fals
   const c = TEAM_COLORS[me.color];
   const used = new Set(players.filter((p, i) => p && i !== slot).map((p) => p.color));
   const accList = availableAccessories(unlockedZorro);
+  const look = parseLook(me.acc);
+  const [tab, setTab] = useState('head');
+  const parts = { head: accList, face: FACES, beard: BEARDS };
+  const setPart = (k, id) => onPick({ acc: composeLook({ ...look, [k]: id }) });
   return (
     <div className="card">
       <div className="me" style={{ '--tc': c.hex }}>
@@ -427,9 +431,18 @@ export function MyChicken({ me, slot, players, cfg, onPick, unlockedZorro = fals
       <div className="sw">
         {TEAM_COLORS.map((t, i) => (i === 4 ? null : <button key={i} className={me.color === i ? 'on' : ''} disabled={used.has(i)} style={{ background: t.hex }} onClick={() => onPick({ color: i })} />))}
       </div>
-      <div className="lab">Accesorio</div>
-      <div className="accs">
-        {accList.map((a) => <button key={a.id} title={a.name} className={me.acc === a.id ? 'on' : ''} onClick={() => onPick({ acc: a.id })}><img alt={a.name} src={chickenPortrait(c.hex, a.id, false, 96)} /></button>)}
+      <div className="row" style={{ justifyContent: 'space-between', marginTop: 10 }}>
+        <div className="lab" style={{ margin: 0 }}>Apariencia: <b>{lookName(me.acc)}</b></div>
+        <button className="btn sm white" onClick={() => onPick({ acc: randomLook() })}>🎲 Al azar</button>
+      </div>
+      <div className="seg" style={{ marginTop: 6 }}>
+        {[['head', '🎩 Cabeza'], ['face', '🥸 Cara'], ['beard', '🧔 Barba']].map(([k, n]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{n}</button>)}
+      </div>
+      <div className="accs" style={{ marginTop: 8 }}>
+        {parts[tab].map((a) => {
+          const preview = composeLook({ ...look, [tab]: a.id });
+          return <button key={a.id} title={a.name} className={look[tab] === a.id ? 'on' : ''} onClick={() => setPart(tab, a.id)}><img alt={a.name} src={chickenPortrait(c.hex, preview, false, 96, tab === 'head' ? 'body' : 'head')} /><span className="accn">{a.name}</span></button>;
+        })}
       </div>
       <button className="btn sm white" style={{ marginTop: 12 }} onClick={() => setEditNames(!editNames)}>✏️ Nombres de tus pollitos</button>
       {editNames && (

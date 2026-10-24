@@ -1,7 +1,7 @@
 // Motor del anfitrión (pantalla principal o celular de J1): red, lobby, equipos y partida
 import {
   PEER_PREFIX, CODE_CHARS, MAX_PLAYERS, TEAM_COLORS, TEAM_NAMES, CPU_TEAM_NAMES, CHICKEN_NAMES, ROBOT_NAMES,
-  ACCESSORIES, availableAccessories, DEFAULT_CFG, ISLANDS, RANDOM_ISLAND, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS,
+  ACCESSORIES, availableAccessories, validLook, randomLook, composeLook, CPU_CHICKEN_NAMES, DEFAULT_CFG, ISLANDS, RANDOM_ISLAND, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS,
   CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS, sensRad,
 } from './constants.js';
 import { Match } from './match.js';
@@ -14,7 +14,7 @@ import { LEVELS, levelById, storyTeams, storyCfg } from './story.js';
 import { Cinema, buildCinematic } from './cinema.js';
 
 const STEP = 1 / 60;
-const DEFAULT_ACC = ['casco', 'vueltiao', 'gorra', 'corona'];
+const DEFAULT_ACC = ['casco|ninguna|ninguna', 'vueltiao|ninguna|bigote', 'gorra|gafas|ninguna', 'vaquero|ninguna|candado'];
 const SFX_FX = new Set(['boom', 'splash']);
 
 function randCode() {
@@ -261,8 +261,7 @@ export class GameHost {
     const p = this.players[slot];
     if (!p || this.phase !== 'lobby') return;
     if (Number.isInteger(msg.color) && TEAM_COLORS[msg.color] && msg.color !== 4 && !this.players.some((o) => o && o !== p && o.color === msg.color)) p.color = msg.color;
-    const allowed = availableAccessories(this.isZorroUnlocked());
-    if (msg.acc && allowed.some((a) => a.id === msg.acc)) p.acc = msg.acc;
+    if (msg.acc && validLook(msg.acc, this.isZorroUnlocked())) p.acc = msg.acc;
     if (typeof msg.teamName === 'string' && msg.teamName.trim()) p.teamName = msg.teamName.trim().slice(0, 20);
     if (Array.isArray(msg.names)) p.names = p.names.map((n, i) => (typeof msg.names[i] === 'string' && msg.names[i].trim() ? msg.names[i].trim().slice(0, 12) : n));
     if (Number.isInteger(msg.team) && msg.team >= 0 && msg.team < 4) p.team = msg.team;
@@ -541,8 +540,8 @@ export class GameHost {
     const preferred = forceIsland || (this.cfg && this.cfg.island !== RANDOM_ISLAND ? this.cfg.island : null);
     const island = preferred && ids.includes(preferred) ? preferred : ids[Math.floor(Math.random() * ids.length)];
     const teams = [0, 1].map((i) => ({
-      id: 'd' + i, name: CPU_TEAM_NAMES[i], color: TEAM_COLORS[i].hex, dark: TEAM_COLORS[i].dark, acc: DEFAULT_ACC[i], robot: i === 1,
-      cpu: 1, slots: [], alliance: 'd' + i, names: shuffle(i ? ROBOT_NAMES : CHICKEN_NAMES).slice(0, 3),
+      id: 'd' + i, name: CPU_TEAM_NAMES[Math.floor(Math.random() * CPU_TEAM_NAMES.length)], color: TEAM_COLORS[i].hex, dark: TEAM_COLORS[i].dark, acc: randomLook(), robot: false,
+      cpu: 1, slots: [], alliance: 'd' + i, names: shuffle(i ? CPU_CHICKEN_NAMES : CHICKEN_NAMES).slice(0, 3),
     }));
     this.demo = new Match({ cfg: { ...DEFAULT_CFG, chickens: 3, turnTime: 30, sudden: 4 }, teams, seed: Math.floor(Math.random() * 1e9), island });
     this.demoBrains = teams.map(() => new CpuBrain(this.demo, 1));
@@ -584,11 +583,13 @@ export class GameHost {
     let cpu = cfg.cpuTeams;
     if (coop || teams.length < 2) cpu = Math.max(1, cpu);
     cpu = Math.min(cpu, 4 - teams.length);
-    const cpuColors = [4, 5, 6];
-    const robotNames = shuffle(ROBOT_NAMES);
+    const usedHex = new Set(teams.map((t) => t.color));
+    const cpuColors = [5, 6, 4, 0, 1, 2, 3].filter((ci) => !usedHex.has(TEAM_COLORS[ci].hex));
+    const cpuNames = shuffle(CPU_CHICKEN_NAMES);
+    const cpuTeamNames = shuffle(CPU_TEAM_NAMES);
     for (let i = 0; i < cpu; i++) {
       const c = TEAM_COLORS[cpuColors[i]];
-      teams.push({ id: 'c' + i, name: CPU_TEAM_NAMES[i], color: c.hex, dark: c.dark, acc: 'casco', robot: true, cpu: cfg.cpuLevel, slots: [], alliance: coop ? 'C' : 'c' + i, names: robotNames.slice(i * 4, i * 4 + 4) });
+      teams.push({ id: 'c' + i, name: cpuTeamNames[i], color: c.hex, dark: c.dark, acc: randomLook(), robot: false, cpu: cfg.cpuLevel, slots: [], alliance: coop ? 'C' : 'c' + i, names: cpuNames.slice(i * 4, i * 4 + 4) });
     }
     return teams.slice(0, 4);
   }
@@ -834,7 +835,7 @@ export class GameHost {
     const coop = m.cfg.mode === 'coop';
     let title, sub;
     if (!winners.length) { title = '¡Empate!'; sub = 'No quedó ni una pluma en pie'; }
-    else if (coop) { title = win === 'H' ? '¡Victoria!' : '¡Derrota!'; sub = win === 'H' ? 'Los pollitos de lata quedaron hechos chatarra' : 'Los robots se quedaron con la granja'; }
+    else if (coop) { title = win === 'H' ? '¡Victoria!' : '¡Derrota!'; sub = win === 'H' ? 'Los pollos de la CPU quedaron desplumados' : 'La CPU se quedó con el gallinero'; }
     else { title = `¡Ganó ${winners[0].name}!`; sub = 'Pollo frito para todos los demás'; }
     const st = m.stats;
     const best = (key) => { let b = null; for (const t of m.teams) if (!b || st[t.id][key] > st[b.id][key]) b = t; return b && st[b.id][key] > 0 ? { name: b.name, color: b.color, n: st[b.id][key] } : null; };
