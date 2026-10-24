@@ -166,6 +166,7 @@ input, select { font-family: var(--body); }
 /* ---------- controles táctiles ---------- */
 .pad { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
 .pad > * { pointer-events: auto; }
+.aimpad { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
 .joy { position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: 22px; width: 150px; height: 150px; border-radius: 50%; border: 4px solid var(--ink); background: rgba(255,244,214,.82); box-shadow: 0 5px 0 var(--ink); touch-action: none; }
 .joy i { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; border: 4px solid var(--ink); background: var(--yellow); box-shadow: inset 0 -5px 0 rgba(0,0,0,.18); }
 .joy b { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--font); font-size: 11px; color: var(--ink2); white-space: nowrap; }

@@ -63,6 +63,9 @@ const tapFire = async (p, ms = 150) => {
   check(await t.locator('.isl-btn.on[data-island="billar"]').count() === 1, 'el mapa elegido en el celular llega al TV');
   check(await t.evaluate(() => !!(window.__fcHost && window.__fcHost.demo && window.__fcHost.demo.island === 'billar')), 'el fondo del lobby cambia a la isla elegida');
   check((await t.locator('.isl-pill').innerText()).includes('Mesa de Billar'), 'el lobby del TV muestra el nombre de la isla elegida');
+  await a.locator('[data-sens="baja"]').click();
+  check(await a.evaluate(() => JSON.parse(localStorage.getItem('fc_ctrl') || '{}').sens === 'baja'), 'ajuste de sensibilidad se guarda en localStorage');
+  await a.locator('[data-sens="media"]').click();
   await a.getByText('Sí, verlo aquí').click();
   await a.setViewportSize({ width: 860, height: 400 });
   await a.getByText('¡A PELEAR!').click();
@@ -73,7 +76,26 @@ const tapFire = async (p, ms = 150) => {
   const p = await waitTurn([a]);
   check(!!p, 'llega el turno del jugador');
   if (p) {
-    await p.locator('.rb', { hasText: 'Apuntar' }).click(); await sleep(800);
+    await p.locator('.rb', { hasText: 'Apuntar' }).click(); await sleep(600);
+    const p0 = await t.evaluate(() => window.__fcHost.match.turn.pitch);
+    const jb = await p.locator('.joy').boundingBox();
+    await p.mouse.move(jb.x + jb.width / 2, jb.y + jb.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(jb.x + jb.width / 2, jb.y + 12, { steps: 5 });
+    await sleep(250);
+    await p.mouse.up();
+    await sleep(200);
+    const pJoy = await t.evaluate(() => window.__fcHost.match.turn.pitch);
+    check(Math.abs(pJoy - p0) < 1e-4, 'el joystick ya no mueve la mira');
+    const before = await t.evaluate(() => ({ pitch: window.__fcHost.match.turn.pitch, yaw: window.__fcHost.match.activeChicken().yaw }));
+    await p.mouse.move(430, 220);
+    await p.mouse.down();
+    await p.mouse.move(510, 140, { steps: 8 });
+    await sleep(150);
+    await p.mouse.up();
+    await sleep(300);
+    const after = await t.evaluate(() => ({ pitch: window.__fcHost.match.turn.pitch, yaw: window.__fcHost.match.activeChicken().yaw }));
+    check(after.pitch > before.pitch + 0.1 && Math.abs(after.yaw - before.yaw) > 0.1, 'arrastrar en el celular cambia la mira poco a poco');
     await tapFire(p, 800); await sleep(2500);
     await t.screenshot({ path: OUT + '1_disparo_tv.png' });
     await p.screenshot({ path: OUT + '1_disparo_j1.png' });

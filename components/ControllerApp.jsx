@@ -4,7 +4,7 @@ import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, islandName, weaponById } from '..
 import { peerOptionsFromURL } from '../game/peeropts';
 import { Audio } from '../game/audio';
 import { ConfigPanel, ConfigSummary, TeamBars, Results, MyChicken } from './Shared';
-import { TurnPad } from './TouchControls';
+import { TurnPad, SensPanel } from './TouchControls';
 
 function getPid() {
   try {
@@ -14,7 +14,7 @@ function getPid() {
   } catch (e) { return Math.random().toString(36).slice(2); }
 }
 function loadPrefs() {
-  const def = { view: null, sound: true };
+  const def = { view: null, sound: true, sens: 'media', invertY: false };
   try { return { ...def, ...(JSON.parse(localStorage.getItem('fc_ctrl') || 'null') || {}) }; } catch (e) { return def; }
 }
 function savePrefs(p) { try { localStorage.setItem('fc_ctrl', JSON.stringify(p)); } catch (e) { /* nada */ } }
@@ -223,6 +223,7 @@ export default function ControllerApp() {
                 <button className={!viewOn ? 'on' : ''} onClick={() => setPref({ view: false })}>🎮 Solo mando</button>
               </div>
               <div className="small" style={{ marginTop: 6 }}>{noScreen ? 'No hay pantalla principal: lo normal es verlo aquí.' : 'Con la pantalla principal basta con "Solo mando".'}</div>
+              <SensPanel sens={prefs.sens} invertY={prefs.invertY} onChange={setPref} />
             </div>
             {isHost ? (
               <div className="card">
@@ -268,7 +269,16 @@ export default function ControllerApp() {
           <span className={`clock ${info.retreat ? 'ret' : info.clock <= 5 ? 'warn' : ''}`}>{info.retreat || info.clock}</span>
         </div>
       )}
-      {phase === 'match' && myTurn && info && <TurnPad info={info} inv={turn.inv} onInput={(i) => { inp.current = i; }} onAct={(a) => send({ t: 'act', a })} />}
+      {phase === 'match' && myTurn && info && (
+        <TurnPad
+          info={info}
+          inv={turn.inv}
+          prefs={prefs}
+          onInput={(i) => { inp.current = i; }}
+          onAct={(a) => send({ t: 'act', a })}
+          onAim={({ dyaw, dpitch }) => send({ t: 'aimd', dyaw, dpitch })}
+        />
+      )}
       {phase === 'match' && myTurn && info && !viewOn && (
         <div className="spect" style={{ top: 30, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
           <div className="card" style={{ padding: '8px 12px', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
@@ -303,6 +313,9 @@ export default function ControllerApp() {
         <div className="modal">
           <div className="card">
             <div className="res-title">Pausa</div>
+            <div style={{ margin: '10px 0 14px', textAlign: 'left' }}>
+              <SensPanel sens={prefs.sens} invertY={prefs.invertY} onChange={setPref} />
+            </div>
             <div className="btns" style={{ marginTop: 10 }}>
               <button className="btn green big" onClick={() => send({ t: 'pause' })}>▶ Seguir</button>
               {isHost && <button className="btn white" onClick={() => send({ t: 'quit' })}>Salir al lobby</button>}

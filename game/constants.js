@@ -137,6 +137,15 @@ export const QUALITY = [
   { id: 'normal', name: 'Normal' },
   { id: 'ahorro', name: 'Ahorro' },
 ];
+export const SENS_OPTIONS = [
+  { id: 'baja', name: 'Baja', rad: 0.0025 },
+  { id: 'media', name: 'Media', rad: 0.004 },
+  { id: 'alta', name: 'Alta', rad: 0.007 },
+];
+export function sensRad(id) {
+  const f = SENS_OPTIONS.find((s) => s.id === id);
+  return f ? f.rad : 0.004;
+}
 
 export const DEFAULT_CFG = {
   mode: 'versus',

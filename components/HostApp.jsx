@@ -177,11 +177,11 @@ function Hud({ st, h }) {
       )}
       {st.kbTurn && showPlay && (
         <div className="card keys">
-          <b>Teclado:</b> W/S caminar · A/D girar · R apuntar · Espacio (mantener) disparar · J saltar · K salto atrás · E/Q cambiar arma · 1-5 mecha · C mapa
+          <b>Teclado y mouse:</b> W/S caminar · A/D girar · Clic en el juego: apuntar con mouse y disparar (clic izq.) · Clic der./R: 🎯 apuntar · Rueda/E/Q: arma · Espacio: disparar · J/K: saltar · 1-5: mecha · C: mapa · Esc: soltar mouse
         </div>
       )}
       {st.localTurn && showPlay && (
-        <TurnPad info={t} inv={t.inv} onInput={(i) => h.setLocalIn(i)} onAct={(a) => h.localAct(a)} />
+        <TurnPad info={t} inv={t.inv} onInput={(i) => h.setLocalIn(i)} onAct={(a) => h.localAct(a)} onAim={({ dyaw, dpitch }) => h.localAim(dyaw, dpitch)} />
       )}
       {st.phase === 'match' && <button className="btn sm white" style={st.local !== null ? { position: 'absolute', top: 64, left: 16, pointerEvents: 'auto' } : { position: 'absolute', bottom: 16, right: 16, pointerEvents: 'auto' }} onClick={() => h.togglePause()}>II Pausa</button>}
       {st.paused && st.phase === 'match' && (

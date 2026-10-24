@@ -1,8 +1,37 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { WEAPONS, weaponById } from '../game/constants';
+import { WEAPONS, SENS_OPTIONS, sensRad, weaponById } from '../game/constants';
 
 function vib(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* nada */ } }
+
+function readCtrlPrefs() {
+  const def = { sens: 'media', invertY: false };
+  try { return { ...def, ...(JSON.parse(localStorage.getItem('fc_ctrl') || 'null') || {}) }; } catch (e) { return def; }
+}
+
+export function SensPanel({ sens = 'media', invertY = false, onChange }) {
+  return (
+    <div className="sens-panel">
+      <div className="row" style={{ gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1.4, minWidth: 160 }}>
+          <div className="lab">Sensibilidad al apuntar</div>
+          <div className="seg">
+            {SENS_OPTIONS.map((s) => (
+              <button key={s.id} type="button" data-sens={s.id} className={sens === s.id ? 'on' : ''} onClick={() => onChange({ sens: s.id })}>{s.name}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 120 }}>
+          <div className="lab">Invertir vertical</div>
+          <div className="seg">
+            <button type="button" className={!invertY ? 'on' : ''} onClick={() => onChange({ invertY: false })}>No</button>
+            <button type="button" data-invert="1" className={invertY ? 'on' : ''} onClick={() => onChange({ invertY: true })}>Sí</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Joystick virtual: devuelve mx (derecha +) y my (arriba +) entre -1 y 1
 function Joystick({ onMove, top = 'Avanzar', bottom = 'Retroceder' }) {
@@ -92,9 +121,9 @@ function hintFor(info) {
   if (info.retreat) return `¡Escóndete! ${info.retreat} s`;
   if (info.rope) return 'Joystick: balancearte y subir/bajar · SALTAR: soltarte';
   if (info.jet) return 'Mantén SALTAR para subir · joystick para moverte';
-  if (info.mode === 'target') return 'Mueve la mira roja con el joystick y toca DISPARAR';
+  if (info.mode === 'target') return 'Arrastra en la pantalla para mover la mira roja y toca DISPARAR';
   if (info.charging) return 'Suelta para lanzar';
-  if (w.aim === 'power') return info.mode === 'aim' ? 'Joystick: apuntar · Mantén DISPARAR para la fuerza' : 'Toca 🎯 para apuntar · Mantén DISPARAR';
+  if (w.aim === 'power') return info.mode === 'aim' ? 'Arrastra en la pantalla para apuntar · Mantén DISPARAR' : 'Arrastra para apuntar o toca 🎯 · Mantén DISPARAR';
   if (w.aim === 'melee') return 'Acércate al rival y toca DISPARAR';
   if (w.aim === 'drop') return 'Toca DISPARAR para dejarla y ¡corre!';
   if (w.id === 'cuerda') return 'Apunta hacia arriba y toca DISPARAR para engancharte';
@@ -102,20 +131,68 @@ function hintFor(info) {
 }
 
 // Controles del jugador del turno
-export function TurnPad({ info, inv, onInput, onAct }) {
+export function TurnPad({ info, inv, onInput, onAct, onAim, prefs }) {
   const st = useRef({ mx: 0, my: 0, fire: false, jumpHeld: false });
   const [grid, setGrid] = useState(false);
+  const aimPtr = useRef(null);
+  const aimAcc = useRef({ dyaw: 0, dpitch: 0 });
+  const onAimRef = useRef(onAim);
+  onAimRef.current = onAim;
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   const send = () => onInput({ ...st.current });
-  useEffect(() => () => { st.current = { mx: 0, my: 0, fire: false, jumpHeld: false }; onInput({ ...st.current }); }, []); // eslint-disable-line
+  const flushAim = () => {
+    const a = aimAcc.current;
+    if ((Math.abs(a.dyaw) > 1e-6 || Math.abs(a.dpitch) > 1e-6) && onAimRef.current) {
+      onAimRef.current({ dyaw: +a.dyaw.toFixed(5), dpitch: +a.dpitch.toFixed(5) });
+      aimAcc.current = { dyaw: 0, dpitch: 0 };
+    }
+  };
+  useEffect(() => {
+    const id = setInterval(flushAim, 33);
+    return () => {
+      clearInterval(id);
+      st.current = { mx: 0, my: 0, fire: false, jumpHeld: false };
+      onInput({ ...st.current });
+    };
+  }, []); // eslint-disable-line
   if (!info) return null;
   const w = weaponById(info.weapon);
   const n = inv ? inv[w.id] : -1;
   const aimMode = info.mode === 'aim';
+  const getSens = () => {
+    const p = prefsRef.current || readCtrlPrefs();
+    return { rad: sensRad(p.sens || 'media'), invertY: !!p.invertY };
+  };
   return (
     <div className="pad">
+      <div
+        className="aimpad"
+        onPointerDown={(e) => {
+          aimPtr.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ }
+        }}
+        onPointerMove={(e) => {
+          if (!aimPtr.current || e.pointerId !== aimPtr.current.id) return;
+          const dx = e.clientX - aimPtr.current.x;
+          const dy = e.clientY - aimPtr.current.y;
+          aimPtr.current.x = e.clientX;
+          aimPtr.current.y = e.clientY;
+          if (!dx && !dy) return;
+          const { rad, invertY } = getSens();
+          aimAcc.current.dyaw += dx * rad;
+          aimAcc.current.dpitch += -dy * rad * (invertY ? -1 : 1);
+        }}
+        onPointerUp={(e) => {
+          if (aimPtr.current && e.pointerId === aimPtr.current.id) { aimPtr.current = null; flushAim(); }
+        }}
+        onPointerCancel={(e) => {
+          if (aimPtr.current && e.pointerId === aimPtr.current.id) { aimPtr.current = null; flushAim(); }
+        }}
+      />
       <Joystick
-        top={info.mode === 'target' ? 'Mover mira' : aimMode ? 'Subir mira' : info.rope ? 'Subir' : 'Avanzar'}
-        bottom={info.mode === 'target' ? '' : aimMode ? 'Bajar mira' : info.rope ? 'Bajar' : 'Retroceder'}
+        top={info.rope ? 'Subir' : 'Avanzar'}
+        bottom={info.rope ? 'Bajar' : 'Retroceder'}
         onMove={(x, y) => { st.current.mx = x; st.current.my = y; send(); }}
       />
       {!info.retreat && !info.walker && (

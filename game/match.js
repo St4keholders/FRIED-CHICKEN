@@ -5,7 +5,7 @@ import { VOX, NX, NZ, WORLD_X, WORLD_Z, GRAVITY, PROJ_GRAVITY, CHICKEN_R, CHICKE
 import { quote } from './voices.js';
 
 const R = CHICKEN_R, H = CHICKEN_H;
-const WALK = 2.6, TURN = 2.6, AIM_TURN = 1.3, PITCH_SPEED = 1.0;
+const WALK = 2.6, TURN = 2.6, AIM_TURN = 0.65, PITCH_SPEED = 0.5;
 const MAX_POWER_TIME = 1.5;
 
 // parámetros de las explosiones de cada arma
@@ -187,6 +187,26 @@ export class Match {
   // ---------------- entradas del jugador del turno ----------------
   // inp: { mx, my, fire, jumpHeld }  (mantenidos)
   control(inp) { if (this.turn) this.turn.inp = inp; }
+
+  // movimiento acumulado de la mira (dedo arrastrado o mouse) en radianes
+  aimDelta(dyaw, dpitch) {
+    const T = this.turn;
+    if (!T || (this.phase !== 'play' && this.phase !== 'retreat')) return;
+    const ch = this.activeChicken();
+    if (!ch || !ch.alive) return;
+    const dy = Number(dyaw) || 0;
+    const dp = Number(dpitch) || 0;
+    if (!dy && !dp) return;
+    if (T.mode === 'target' && T.cursor) {
+      const fx = Math.sin(ch.yaw), fz = Math.cos(ch.yaw);
+      const step = 12;
+      T.cursor.x = Math.max(1, Math.min(WORLD_X - 1, T.cursor.x + (fx * dp - fz * dy) * step));
+      T.cursor.z = Math.max(1, Math.min(WORLD_Z - 1, T.cursor.z + (fz * dp + fx * dy) * step));
+      return;
+    }
+    ch.yaw -= dy;
+    T.pitch = Math.max(-1.2, Math.min(1.45, T.pitch + dp));
+  }
 
   act(a) {
     const T = this.turn;
@@ -560,16 +580,18 @@ export class Match {
     T.prevFire = !!inp.fire;
 
     if (T.mode === 'target') {
-      // mover la mira sobre el mapa (relativo a hacia dónde mira el pollito)
-      const fx = Math.sin(ch.yaw), fz = Math.cos(ch.yaw);
-      T.cursor.x += (fx * my - fz * mx) * 14 * dt;
-      T.cursor.z += (fz * my + fx * mx) * 14 * dt;
-      T.cursor.x = Math.max(1, Math.min(WORLD_X - 1, T.cursor.x));
-      T.cursor.z = Math.max(1, Math.min(WORLD_Z - 1, T.cursor.z));
+      // mover la mira sobre el mapa (CPU o teclado con curva suave)
+      if (T.cpu) {
+        const fx = Math.sin(ch.yaw), fz = Math.cos(ch.yaw);
+        T.cursor.x += (fx * my - fz * mx) * 14 * dt;
+        T.cursor.z += (fz * my + fx * mx) * 14 * dt;
+        T.cursor.x = Math.max(1, Math.min(WORLD_X - 1, T.cursor.x));
+        T.cursor.z = Math.max(1, Math.min(WORLD_Z - 1, T.cursor.z));
+      }
       if (firePress && canFire) this.fire(1);
       return;
     }
-    if (T.mode === 'aim') {
+    if (T.mode === 'aim' && T.cpu) {
       ch.yaw -= mx * AIM_TURN * dt;
       T.pitch = Math.max(-1.2, Math.min(1.45, T.pitch + my * PITCH_SPEED * dt));
     }
@@ -600,7 +622,7 @@ export class Match {
       if (ch.jet <= 0) { ch.jet = 0; this.emit({ k: 'sfx', s: 'jetoff' }); }
       return;
     }
-    if (T.mode === 'walk' && ch.ground && !ch.air) {
+    if ((T.mode === 'walk' || (T.mode === 'aim' && !T.cpu)) && ch.ground && !ch.air) {
       ch.yaw -= mx * TURN * dt;
       if (my) {
         const sp = (my > 0 ? WALK : WALK * 0.6) * my;
@@ -960,6 +982,7 @@ export class Match {
       team: T.team, teamName: team.name, color: team.color, ch: ch ? ch.name : '', slot: T.slot, cpu: T.cpu,
       clock: Math.ceil(T.clock), retreat: this.phase === 'retreat' ? Math.ceil(T.retreat) : 0, phase: this.phase,
       weapon: T.weapon, fuse: T.fuse, mode: T.mode, inv: team.inv, walker: !!T.walker, power: T.power, charging: T.charging,
+      pitch: Math.round(T.pitch * 1000) / 1000, yaw: ch ? Math.round(ch.yaw * 1000) / 1000 : 0,
       wind: Math.round(Math.hypot(this.wind.x, this.wind.z) * 10), dd: team.dd, jet: ch && ch.jet > 0, rope: ch && !!ch.rope, umbrella: ch && ch.umbrella,
     };
   }

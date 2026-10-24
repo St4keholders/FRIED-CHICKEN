@@ -2,7 +2,7 @@
 import {
   PEER_PREFIX, CODE_CHARS, MAX_PLAYERS, TEAM_COLORS, TEAM_NAMES, CPU_TEAM_NAMES, CHICKEN_NAMES, ROBOT_NAMES,
   ACCESSORIES, DEFAULT_CFG, ISLANDS, RANDOM_ISLAND, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS,
-  CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS,
+  CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, WEAPONS, WEAPON_SETS, sensRad,
 } from './constants.js';
 import { Match } from './match.js';
 import { CpuBrain } from './ai.js';
@@ -51,6 +51,8 @@ export class GameHost {
     this.localSlot = null;
     this.localIn = { mx: 0, my: 0, fire: false, jumpHeld: false };
     this.keys = new Set();
+    this.mouseLocked = false;
+    this.mouseFire = false;
     this.paused = false;
     this.match = null;
     this.brains = [];
@@ -66,8 +68,20 @@ export class GameHost {
     this.last = performance.now();
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
+    this.onMouseDown = this.onMouseDown.bind(this);
+    this.onMouseUp = this.onMouseUp.bind(this);
+    this.onMouseMove = this.onMouseMove.bind(this);
+    this.onWheel = this.onWheel.bind(this);
+    this.onCtx = (e) => { if (this.phase === 'match') e.preventDefault(); };
+    this.onPtrLock = () => { if (typeof document !== 'undefined' && document.pointerLockElement !== this.renderer.canvas) this.mouseFire = false; };
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('mousemove', this.onMouseMove);
+    this.renderer.canvas.addEventListener('mousedown', this.onMouseDown);
+    this.renderer.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.renderer.canvas.addEventListener('contextmenu', this.onCtx);
+    document.addEventListener('pointerlockchange', this.onPtrLock);
     this.onVis = () => { if (document.hidden && this.phase === 'match' && !this.paused) this.togglePause(); };
     document.addEventListener('visibilitychange', this.onVis);
     if (typeof window !== 'undefined') window.__fcHost = this;
@@ -82,6 +96,12 @@ export class GameHost {
     if (typeof window !== 'undefined' && window.__fcHost === this) window.__fcHost = null;
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('mousemove', this.onMouseMove);
+    this.renderer.canvas.removeEventListener('mousedown', this.onMouseDown);
+    this.renderer.canvas.removeEventListener('wheel', this.onWheel);
+    this.renderer.canvas.removeEventListener('contextmenu', this.onCtx);
+    document.removeEventListener('pointerlockchange', this.onPtrLock);
     document.removeEventListener('visibilitychange', this.onVis);
     this.audio.stopSong();
     try { this.peer && this.peer.destroy(); } catch (e) { /* nada */ }
@@ -281,6 +301,7 @@ export class GameHost {
     const isHost = this.hostSlot() === slot;
     switch (msg.t) {
       case 'in': this.phoneIn[slot] = { mx: +msg.mx || 0, my: +msg.my || 0, fire: !!msg.fire, jumpHeld: !!msg.jh }; break;
+      case 'aimd': this.playerAim(slot, msg.dyaw, msg.dpitch); break;
       case 'act': this.playerAct(slot, msg.a || {}); break;
       case 'pick': this.pick(slot, msg); break;
       case 'cfg': if (isHost && this.phase === 'lobby') this.setCfg(msg.cfg || {}); break;
@@ -302,6 +323,12 @@ export class GameHost {
     const m = this.match;
     if (!m || this.paused || !m.turn || m.turn.cpu || m.turn.slot !== slot) return;
     if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'surrender'].includes(a.t)) m.act(a);
+  }
+
+  playerAim(slot, dyaw, dpitch) {
+    const m = this.match;
+    if (!m || this.paused || !m.turn || m.turn.cpu || m.turn.slot !== slot) return;
+    m.aimDelta(dyaw, dpitch);
   }
 
   react(slot, e) {
@@ -338,6 +365,12 @@ export class GameHost {
     }
     if (this.phase === 'results') { if (code === 'Enter' || code === 'NumpadEnter') this.next('again'); if (code === 'Escape') this.next('lobby'); return; }
     if (this.phase !== 'match') return;
+    if (code === 'Escape' && (this.mouseLocked || (typeof document !== 'undefined' && document.pointerLockElement === this.renderer.canvas))) {
+      this.mouseLocked = false;
+      this.mouseFire = false;
+      try { if (document.pointerLockElement) document.exitPointerLock(); } catch (err) { /* nada */ }
+      return;
+    }
     if (code === 'Escape' || code === 'KeyP') { this.togglePause(); return; }
     const m = this.match;
     if (!m || !m.turn || m.turn.cpu || this.paused) return;
@@ -364,12 +397,63 @@ export class GameHost {
 
   kbInput() {
     const k = this.keys, any = (n) => KEYS[n].some((c) => k.has(c));
-    return { mx: (any('right') ? 1 : 0) - (any('left') ? 1 : 0), my: (any('up') ? 1 : 0) - (any('down') ? 1 : 0), fire: any('fire'), jumpHeld: any('jump') };
+    return { mx: (any('right') ? 1 : 0) - (any('left') ? 1 : 0), my: (any('up') ? 1 : 0) - (any('down') ? 1 : 0), fire: any('fire') || this.mouseFire, jumpHeld: any('jump') };
+  }
+
+  isKbTurn() {
+    const m = this.match;
+    if (this.phase !== 'match' || this.paused || !m || !m.turn || m.turn.cpu) return false;
+    const p = this.players[m.turn.slot];
+    return !!(p && p.kind === 'kb');
+  }
+
+  mouseSensCfg() {
+    try {
+      const c = JSON.parse(localStorage.getItem('fc_ctrl') || 'null') || {};
+      return { rad: sensRad(c.sens || 'media'), invertY: !!c.invertY };
+    } catch (e) { return { rad: 0.004, invertY: false }; }
+  }
+
+  onMouseDown(e) {
+    if (!this.isKbTurn()) return;
+    this.audio.init();
+    if (e.button === 2) {
+      e.preventDefault();
+      this.mouseLocked = true;
+      try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
+      this.match.act({ t: 'aim' });
+    } else if (e.button === 0) {
+      this.mouseLocked = true;
+      try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
+      this.mouseFire = true;
+    }
+  }
+
+  onMouseUp(e) {
+    if (e.button === 0) this.mouseFire = false;
+  }
+
+  onMouseMove(e) {
+    if (!this.isKbTurn()) return;
+    if (!this.mouseLocked && (typeof document === 'undefined' || document.pointerLockElement !== this.renderer.canvas)) return;
+    const dx = e.movementX || 0, dy = e.movementY || 0;
+    if (!dx && !dy) return;
+    const { rad, invertY } = this.mouseSensCfg();
+    this.match.aimDelta(dx * rad, -dy * rad * (invertY ? -1 : 1));
+  }
+
+  onWheel(e) {
+    if (!this.isKbTurn()) return;
+    if (e.deltaY !== 0) {
+      e.preventDefault();
+      this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
+    }
   }
 
   // jugador en el mismo dispositivo (celular que crea la sala)
   setLocalIn(inp) { this.localIn = inp; }
   localAct(a) { if (this.localSlot !== null) this.playerAct(this.localSlot, a); }
+  localAim(dyaw, dpitch) { if (this.localSlot !== null) this.playerAim(this.localSlot, dyaw, dpitch); }
 
   toggleMute() { this.audio.setMuted(!this.audio.muted); this.changed(); }
 

@@ -46,5 +46,21 @@ for (const w of WEAPONS) {
     console.log(`OK  arma ${w.id}`);
   } catch (e) { fails++; console.log(`MAL arma ${w.id}: ${e.message}`); }
 }
+
+// 3) aimDelta gira el pollito y respeta límites de inclinación
+{
+  const m = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 123, island: 'arenero' });
+  while (m.phase !== 'play') m.update(dt);
+  const ch = m.activeChicken();
+  const y0 = ch.yaw, p0 = m.turn.pitch;
+  m.aimDelta(0.2, 0.3);
+  const ok1 = Math.abs(ch.yaw - (y0 - 0.2)) < 1e-6 && Math.abs(m.turn.pitch - (p0 + 0.3)) < 1e-6;
+  m.aimDelta(0, 10);
+  const ok2 = m.turn.pitch === 1.45;
+  m.aimDelta(0, -10);
+  const ok3 = m.turn.pitch === -1.2;
+  if (!ok1 || !ok2 || !ok3) fails++;
+  console.log(`${ok1 && ok2 && ok3 ? 'OK ' : 'MAL'} aimDelta y límites de inclinación`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);
