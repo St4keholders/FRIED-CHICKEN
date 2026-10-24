@@ -5,10 +5,11 @@
 // 3) node tests/e2e.mjs                (capturas en tests/out/)
 import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
+import { fileURLToPath } from 'url';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:3000';
 const Q = '?peerhost=127.0.0.1&peerport=9000&peerpath=/';
-const OUT = new URL('./out/', import.meta.url).pathname;
+const OUT = fileURLToPath(new URL('./out/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 const PASS_HASH = 'b84278f09dc30d6b6710c7628dbe93a440013d3dd152c147c19fe00ba4fecf4f';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -16,7 +17,10 @@ const errors = [];
 let fails = 0;
 const check = (ok, msg) => { console.log(`${ok ? 'OK ' : 'MAL'} ${msg}`); if (!ok) fails++; };
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
+const glArgs = process.platform === 'win32'
+  ? ['--use-gl=angle', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required']
+  : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'];
+const browser = await chromium.launch({ args: glArgs });
 function watch(page, tag) {
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/TUNNEL|fonts|Failed to load resource/.test(m.text())) errors.push(`${tag}: ${m.text()}`); });

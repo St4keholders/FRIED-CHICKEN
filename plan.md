@@ -95,7 +95,7 @@ Marca la revisión como hecha cuando hayas leído todos los archivos de `game/` 
 
 ## 4. Tareas (en orden)
 
-- [ ] **T0. Revisión completa** (sección 2).
+- [x] **T0. Revisión completa** (sección 2).
 
 - [ ] **T1. Error: "elijo el mapa y no cambia".**
   Ya se comprobó en el navegador que la isla elegida sí llega a la configuración y que la partida arranca en esa isla. Lo que confunde es que **el fondo del lobby sigue mostrando una isla al azar** y que no hay una vista previa clara. También puede fallar el `<select>` nativo en algunos celulares.
@@ -191,3 +191,4 @@ node tests/peer-server.mjs          # servidor de conexión local (otra terminal
 | Fecha | Tarea | Qué se hizo | Cómo se probó |
 | --- | --- | --- | --- |
 | 2026-10-23 | — | Plan creado. Comprobado que la selección de isla sí llega a la configuración y a la partida; el problema visible es el fondo del lobby (ver T1). `tests/sim.mjs` y `tests/e2e.mjs` pasan completos. | Navegador automático (TV + celulares, sin TV, cooperativo, teclado). |
+| 2026-10-23 | T0 | Revisión completa de `game/` y `components/`. Arreglado `tests/e2e.mjs` en Windows (`fileURLToPath` para rutas y `--use-angle=d3d11` para usar GPU en vez de SwiftShader por CPU que colgaba el PC). Detectados detalles menores de UI (`Norma` truncado en dificultad CPU en TV, interpolación de altura en pendientes) para pulir. | `npm run build`, `node tests/sim.mjs` (Todo bien) y `node tests/e2e.mjs` (Todo bien, capturas revisadas en `tests/out/`). |
