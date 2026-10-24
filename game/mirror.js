@@ -60,7 +60,7 @@ export class MirrorView {
       const f = c[5];
       return {
         id: i, x: lerp(p[0], c[0], t), y: lerp(p[1], c[1], t), z: lerp(p[2], c[2], t), yaw: lerpAng(p[3], c[3], t), hp: c[4],
-        alive: !!(f & 1), air: !!(f & 2), walking: !!(f & 4), rope: f & 8 ? c[6] : null, jet: !!(f & 16), umbrella: !!(f & 32), dying: !!(f & 64), hurt: !!(f & 128),
+        alive: !!(f & 1), air: !!(f & 2), walking: !!(f & 4), rope: f & 8 ? c[6] : null, jet: !!(f & 16), umbrella: !!(f & 32), dying: !!(f & 64), hurt: !!(f & 128), backflip: !!(f & 256),
       };
     });
     const prev = new Map(a.o.map((o) => [o[0], o]));

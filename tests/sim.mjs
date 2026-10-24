@@ -82,5 +82,18 @@ for (const w of WEAPONS) {
   if (!allOk) fails++;
   console.log(`${allOk ? 'OK ' : 'MAL'} elegir pollito del turno (pickChicken=choose)`);
 }
+
+// 5) salto atrás activa backflip y lo limpia al aterrizar
+{
+  const m = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 789, island: 'arenero' });
+  while (m.phase !== 'play') m.update(dt);
+  const ch = m.activeChicken();
+  m.act({ t: 'back' });
+  const okStart = ch.backflip > 0.5 && (m.snapshot().ch[ch.id][5] & 256) === 256;
+  for (let i = 0; i < 120 && ch.air; i++) m.update(dt);
+  const okLand = ch.backflip === 0 && !ch.air;
+  if (!okStart || !okLand) fails++;
+  console.log(`${okStart && okLand ? 'OK ' : 'MAL'} voltereta en salto atrás (backflip)`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

@@ -21,24 +21,29 @@ const glArgs = process.platform === 'win32'
   ? ['--use-gl=angle', '--use-angle=d3d11', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required']
   : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'];
 const browser = await chromium.launch({ args: glArgs });
-function watch(page, tag) {
-  page.route(/fonts\.g(oogleapis|static)\.com/, (r) => r.abort()).catch(() => {});
+async function watch(page, tag) {
+  await page.route(/fonts\.g(oogleapis|static)\.com/, (r) => r.abort());
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/TUNNEL|fonts|Failed to load resource/.test(m.text())) errors.push(`${tag}: ${m.text()}`); });
 }
 async function tv(size = { width: 1600, height: 900 }, touch = false) {
   const p = await browser.newPage({ viewport: size, isMobile: touch, hasTouch: touch });
-  watch(p, 'TV');
-  await p.goto(BASE + '/' + Q);
+  await watch(p, 'TV');
+  await p.goto(BASE + '/' + Q, { waitUntil: 'domcontentloaded' });
   await p.evaluate((h) => { localStorage.setItem('fc_ok', h); localStorage.removeItem('fc_cfg'); }, PASS_HASH);
-  await p.reload();
-  await sleep(4000);
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  for (let i = 0; i < 30; i++) {
+    const ready = await p.evaluate(() => !!(window.__fcHost && window.__fcHost.peerStatus === 'open' && sessionStorage.getItem('fc_code'))).catch(() => false);
+    if (ready) break;
+    await sleep(300);
+  }
+  await sleep(500);
   return p;
 }
 async function phone(code, tag, size = { width: 412, height: 860 }) {
   const p = await browser.newPage({ viewport: size, isMobile: true, hasTouch: true });
-  watch(p, tag);
-  await p.goto(`${BASE}/mando${Q}&c=${code}`);
+  await watch(p, tag);
+  await p.goto(`${BASE}/mando${Q}&c=${code}`, { waitUntil: 'domcontentloaded' });
   for (let i = 0; i < 30 && !(await p.locator('.me, .top').count()); i++) await sleep(250);
   await sleep(300);
   return p;
@@ -98,6 +103,35 @@ const tapFire = async (p, ms = 150) => {
       return { blockedNormal, blockedAdjusted };
     });
     check(occ.blockedNormal && !occ.blockedAdjusted, 'la cámara evita quedar tapada por obstáculos del terreno');
+    const anims = await t.evaluate(() => {
+      const h = window.__fcHost;
+      const m = h.match;
+      const r = h.renderer;
+      const v = m.view();
+      const activeId = v.turn.ch;
+      const ach = v.chickens.find((c) => c.id === activeId);
+      const idle = v.chickens.find((c) => c.id !== activeId && c.alive);
+      idle.yaw = Math.atan2(ach.x - idle.x, ach.z - idle.z) + 0.7;
+      for (let i = 0; i < 20; i++) r.draw(v, 1 / 60);
+      const idleLook = Math.abs(r.chickens.get(idle.id).obj.userData.head.rotation.y) > 0.1;
+
+      ach.air = true; ach.backflip = true;
+      r.draw(v, 0.2);
+      const acObj = r.chickens.get(activeId).obj;
+      const flipOk = Math.abs(acObj.userData.body.rotation.x) > 0.5;
+      const flapOk = Math.abs(acObj.userData.wings[1].rotation.z - 0.35) > 0.1;
+
+      ach.air = false; ach.backflip = false;
+      v.objs.push({ id: 99999, kind: 'mina', x: ach.x + 1.0, y: ach.y, z: ach.z, yaw: 0 });
+      r.draw(v, 1 / 60);
+      const scaredOk = r.chickens.get(activeId).scared && acObj.userData.eyes[0].scale.y > 0.2 && acObj.userData.beakLow.rotation.x > Math.PI / 2 + 0.5;
+
+      v.phase = 'over';
+      r.draw(v, 1 / 60);
+      const cheerOk = r.chickens.get(activeId).cheering && acObj.userData.wings[1].rotation.z > 1.8;
+      return { idleLook, flipOk, flapOk, scaredOk, cheerOk };
+    });
+    check(anims.idleLook && anims.flipOk && anims.flapOk && anims.scaredOk && anims.cheerOk, 'animaciones de pollitos: mirar al del turno, voltereta, aleteo, cara de susto y festejo');
     await t.evaluate(() => { if (window.__fcHost && window.__fcHost.match) window.__fcHost.match.objs = []; });
     const chBefore = await t.evaluate(() => window.__fcHost.match.turn.ch);
     await p.locator('.pick-next').click(); await sleep(300);
@@ -186,8 +220,8 @@ const tapFire = async (p, ms = 150) => {
   check(await t.locator('.slot .meta', { hasText: 'Teclado' }).count() === 1, 'teclado se une con Espacio');
   const code = await t.evaluate(() => sessionStorage.getItem('fc_code'));
   const pc = await browser.newPage({ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false });
-  watch(pc, 'PC2');
-  await pc.goto(`${BASE}/mando${Q}&c=${code}`);
+  await watch(pc, 'PC2');
+  await pc.goto(`${BASE}/mando${Q}&c=${code}`, { waitUntil: 'domcontentloaded' });
   for (let i = 0; i < 25 && !(await pc.locator('button[data-mode="pc"]').count()); i++) await sleep(300);
   check(await pc.locator('.ctrl.pcmode').count() === 1 && await pc.locator('button[data-mode="pc"].on').count() === 1, '/mando en PC entra en modo PC por defecto');
   await t.evaluate(() => window.__fcHost.setCfg({ cpuTeams: 0 }));

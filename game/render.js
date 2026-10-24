@@ -443,6 +443,7 @@ export class Renderer {
 
     const T = v.turn;
     const active = T ? T.ch : -1;
+    const ach = v.chickens.find((s) => s.id === active);
     // pollitos
     for (const s of v.chickens) {
       const c = this.chickens.get(s.id);
@@ -455,18 +456,110 @@ export class Renderer {
       if (!s.air) { const gy0 = this.terrain.surfaceY(s.x, s.z, s.y + 0.7); if (Math.abs(gy0 - s.y) < 0.5) ry = gy0; }
       obj.position.set(s.x, ry, s.z);
       obj.rotation.y = s.yaw;
-      const body = obj.userData.body;
+      const { body, gun, head, wings, eyes, pupils, beakTop, beakLow, robot } = obj.userData;
       const w = s.walking ? Math.sin(this.time * 14) : 0;
-      body.position.y = s.walking ? Math.abs(w) * 0.07 : 0;
-      body.rotation.z = s.walking ? w * 0.12 : Math.sin(this.time * 1.6 + s.id) * 0.02;
-      body.rotation.x = s.air && !s.rope ? -0.25 : 0;
+      const cheering = v.phase === 'over' && s.alive && !s.dying;
+      const nearMine = !!(v.objs && v.objs.some((o) => o.kind === 'mina' && Math.hypot(o.x - s.x, o.y - s.y, o.z - s.z) < 3.2));
+      const scared = !!(s.hurt || s.dying || nearMine);
+      c.scared = scared;
+      c.cheering = cheering;
+
+      // cuerpo: caminar, festejar o voltereta en salto atrás
+      if (s.backflip && s.air) {
+        if (!c.flipAct) { c.flipAct = true; c.flipT = 0.65; }
+      } else if (!s.air) {
+        c.flipAct = false;
+        c.flipT = 0;
+      }
+      if (c.flipT > 0 && s.air) {
+        c.flipT = Math.max(0, c.flipT - dt);
+        const prog = 1 - c.flipT / 0.65;
+        const ang = -prog * Math.PI * 2;
+        const cy = 0.52;
+        body.rotation.x = ang;
+        body.position.y = cy * (1 - Math.cos(ang));
+        body.position.z = -cy * Math.sin(ang);
+        body.rotation.z = 0;
+      } else if (cheering) {
+        const hop = Math.abs(Math.sin(this.time * 9 + s.id * 1.3));
+        body.position.y = hop * 0.28;
+        body.position.z = 0;
+        body.rotation.x = 0;
+        body.rotation.z = Math.sin(this.time * 4.5 + s.id) * 0.14;
+      } else {
+        body.position.y = s.walking ? Math.abs(w) * 0.07 : 0;
+        body.position.z = 0;
+        body.rotation.z = s.walking ? w * 0.12 : Math.sin(this.time * 1.6 + s.id) * 0.02;
+        body.rotation.x = s.air && !s.rope ? -0.25 : 0;
+      }
       const breathe = 1 + Math.sin(this.time * 2.4 + s.id * 1.7) * 0.015;
       body.scale.set(1, breathe, 1);
       if (s.dying) { const k = 1 + Math.sin(this.time * 30) * 0.08; body.scale.set(k, k, k); }
       if (s.hurt) body.position.x = Math.sin(this.time * 60) * 0.05; else body.position.x = 0;
+
+      // alas: aleteo al caer/volar, alas arriba al festejar o balanceo al caminar
+      if (wings && wings.length === 2) {
+        const baseZ = robot ? 0.25 : 0.35;
+        if (cheering) {
+          const wave = Math.sin(this.time * 16 + s.id) * 0.25;
+          wings[0].rotation.set(0, 0, -(2.15 + wave));
+          wings[1].rotation.set(0, 0, 2.15 + wave);
+          wings[0].position.y = wings[1].position.y = 0.66;
+        } else if (s.air && !s.rope) {
+          const flap = Math.sin(this.time * 32 + s.id) * 0.95;
+          wings[0].rotation.set(0, 0, -(0.55 + flap));
+          wings[1].rotation.set(0, 0, 0.55 + flap);
+          wings[0].position.y = wings[1].position.y = 0.55;
+        } else if (s.walking) {
+          wings[0].rotation.set(w * 0.25, 0, -baseZ);
+          wings[1].rotation.set(-w * 0.25, 0, baseZ);
+          wings[0].position.y = wings[1].position.y = 0.5;
+        } else {
+          wings[0].rotation.set(0, 0, -baseZ);
+          wings[1].rotation.set(0, 0, baseZ);
+          wings[0].position.y = wings[1].position.y = 0.5;
+        }
+      }
+
+      // cara de susto (ojos grandes, pico abierto) al recibir daño o cerca de una mina
+      if (eyes) {
+        for (const e of eyes) {
+          if (robot) e.scale.set(scared ? 0.1 : 0.07, scared ? 0.1 : 0.07, 0.03);
+          else e.scale.set(scared ? 0.18 : 0.13, scared ? 0.22 : 0.16, scared ? 0.13 : 0.1);
+        }
+      }
+      if (pupils) {
+        for (const p of pupils) p.scale.set(scared ? 0.05 : 0.065, scared ? 0.06 : 0.08, 0.045);
+      }
+      if (beakTop) {
+        beakTop.rotation.x = Math.PI / 2 - (scared ? 0.26 : 0);
+        beakTop.position.y = (robot ? 0.92 : 0.93) + (scared ? 0.025 : 0);
+      }
+      if (beakLow) {
+        beakLow.rotation.x = Math.PI / 2 + (scared ? 0.72 : 0.2);
+        beakLow.position.y = scared ? 0.82 : 0.88;
+      }
+
+      // cabeza: los pollitos quietos miran al pollito del turno
+      if (head) {
+        let targetHeadYaw = 0;
+        let targetHeadPitch = 0;
+        if (!cheering && s.id !== active && ach && ach.alive && !s.walking && !s.air && !s.dying) {
+          const dx = ach.x - s.x, dz = ach.z - s.z, dy = ach.y - s.y;
+          let dYaw = Math.atan2(dx, dz) - s.yaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          targetHeadYaw = Math.max(-1.1, Math.min(1.1, dYaw));
+          const dist = Math.hypot(dx, dz) || 1;
+          targetHeadPitch = Math.max(-0.35, Math.min(0.35, -Math.atan2(dy, dist) * 0.6));
+        }
+        const hk = Math.min(1, dt * 8);
+        head.rotation.y += (targetHeadYaw - head.rotation.y) * hk;
+        head.rotation.x += (targetHeadPitch - head.rotation.x) * hk;
+      }
+
       c.umb.visible = !!s.umbrella;
       // arma en la mano del pollito activo
-      const gun = obj.userData.gun;
       const wpn = T && s.id === active ? weaponById(T.weapon) : null;
       gun.visible = !!(wpn && (wpn.aim === 'power' || wpn.id === 'escopeta' || wpn.id === 'cuerda') && v.phase === 'play' && !s.rope && !s.jet);
       if (gun.visible) gun.rotation.x = -(T.pitch || 0);
@@ -545,7 +638,6 @@ export class Renderer {
     for (const [id, it] of this.objs) if (!seen.has(id)) { this.scene.remove(it.mesh); if (it.lbl) it.lbl.remove(); this.objs.delete(id); }
 
     // mira, puntos guía y cursor del mapa
-    const ach = v.chickens.find((s) => s.id === active);
     const wp = T ? weaponById(T.weapon) : null;
     const showAim = ach && ach.alive && v.phase === 'play' && wp && (wp.aim === 'power' || wp.aim === 'direct') && !ach.rope && !ach.jet && T.mode !== 'target';
     if (showAim) {

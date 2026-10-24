@@ -49,12 +49,17 @@ function P(parent, geo, color, pos, scale, rot, kind) {
 const YEL = '#ffd23a', YEL2 = '#f6b820', BELLY = '#fff0a6', ORA = '#ff8a1f', BLK = '#1d1420', WHT = '#ffffff', PINK = '#ff9db5';
 
 function eyes(g, y = 1.05, z = 0.34, robot = false) {
+  const whites = [], pupils = [];
   for (const s of [-1, 1]) {
-    if (robot) { P(g, 'sphere', '#ff2244', [s * 0.12, y, z + 0.06], [0.07, 0.07, 0.03], null, 'glow'); continue; }
-    P(g, 'sphere', WHT, [s * 0.125, y, z], [0.13, 0.16, 0.1]);
-    P(g, 'sphere', BLK, [s * 0.11, y - 0.01, z + 0.075], [0.065, 0.08, 0.04]);
+    if (robot) {
+      whites.push(P(g, 'sphere', '#ff2244', [s * 0.12, y, z + 0.06], [0.07, 0.07, 0.03], null, 'glow'));
+      continue;
+    }
+    whites.push(P(g, 'sphere', WHT, [s * 0.125, y, z], [0.13, 0.16, 0.1]));
+    pupils.push(P(g, 'sphere', BLK, [s * 0.11, y - 0.01, z + 0.075], [0.065, 0.08, 0.04]));
     P(g, 'sphere', WHT, [s * 0.09, y + 0.03, z + 0.11], 0.022, null, 'basic');
   }
+  return { whites, pupils };
 }
 
 function accessory(g, acc, team) {
@@ -113,6 +118,8 @@ function accessory(g, acc, team) {
 
 function buildChicken(team, acc, robot) {
   const g = new THREE.Group();
+  const head = new THREE.Group();
+  const wings = [];
   const dark = shade(team, 0.7);
   if (robot) {
     const MET = '#c3ccd6', MET2 = '#8d99a6';
@@ -120,31 +127,35 @@ function buildChicken(team, acc, robot) {
     P(g, 'sphere', MET, [0, 0.47, 0], [0.46, 0.45, 0.46], null, 'metal');
     P(g, 'cyl', MET2, [0, 0.47, 0], [0.47, 0.06, 0.47], null, 'metal');
     P(g, 'sphere', '#ffcc00', [0, 0.45, 0.42], [0.1, 0.1, 0.05], null, 'glow');
-    for (const s of [-1, 1]) P(g, 'sphere', MET2, [s * 0.46, 0.5, 0], [0.09, 0.22, 0.18], [0, 0, s * 0.25], 'metal');
-    P(g, 'sphere', MET, [0, 0.98, 0.06], 0.35, null, 'metal');
-    P(g, 'rbox', '#18222c', [0, 1.03, 0.3], [0.42, 0.16, 0.12]);
-    eyes(g, 1.03, 0.3, true);
-    P(g, 'cone', '#ff9a3c', [0, 0.92, 0.44], [0.08, 0.18, 0.08], [Math.PI / 2, 0, 0], 'metal');
-    P(g, 'cyl', MET2, [0, 1.42, 0.06], [0.025, 0.2, 0.025], null, 'metal');
-    P(g, 'sphere', '#ff2244', [0, 1.55, 0.06], 0.06, null, 'glow');
-    for (const s of [-1, 1]) P(g, 'sphere', MET2, [s * 0.33, 1.0, 0.06], [0.04, 0.07, 0.07], null, 'metal');
+    for (const s of [-1, 1]) wings.push(P(g, 'sphere', MET2, [s * 0.46, 0.5, 0], [0.09, 0.22, 0.18], [0, 0, s * 0.25], 'metal'));
+    P(head, 'sphere', MET, [0, 0.98, 0.06], 0.35, null, 'metal');
+    P(head, 'rbox', '#18222c', [0, 1.03, 0.3], [0.42, 0.16, 0.12]);
+    const { whites, pupils } = eyes(head, 1.03, 0.3, true);
+    const beakTop = P(head, 'cone', '#ff9a3c', [0, 0.92, 0.44], [0.08, 0.18, 0.08], [Math.PI / 2, 0, 0], 'metal');
+    P(head, 'cyl', MET2, [0, 1.42, 0.06], [0.025, 0.2, 0.025], null, 'metal');
+    P(head, 'sphere', '#ff2244', [0, 1.55, 0.06], 0.06, null, 'glow');
+    for (const s of [-1, 1]) P(head, 'sphere', MET2, [s * 0.33, 1.0, 0.06], [0.04, 0.07, 0.07], null, 'metal');
+    g.add(head);
     P(g, 'torus', team, [0, 0.78, 0.02], [0.31, 0.31, 0.3], [Math.PI / 2, 0, 0]);
     P(g, 'sphere', dark, [0, 0.72, 0.31], 0.07);
+    g.userData = { head, wings, eyes: whites, pupils, beakTop, beakLow: null, robot: true };
     return g;
   }
   for (const s of [-1, 1]) P(g, 'sphere', ORA, [s * 0.17, 0.035, 0.1], [0.12, 0.05, 0.17]);
   P(g, 'sphere', YEL, [0, 0.47, 0], [0.47, 0.44, 0.47]);
   P(g, 'sphere', BELLY, [0, 0.42, 0.28], [0.32, 0.28, 0.2]);
-  for (const s of [-1, 1]) P(g, 'sphere', YEL2, [s * 0.45, 0.5, -0.02], [0.1, 0.24, 0.2], [0, 0, s * 0.35]);
+  for (const s of [-1, 1]) wings.push(P(g, 'sphere', YEL2, [s * 0.45, 0.5, -0.02], [0.1, 0.24, 0.2], [0, 0, s * 0.35]));
   P(g, 'cone', YEL2, [0, 0.62, -0.45], [0.09, 0.22, 0.09], [-2.1, 0, 0]);
-  P(g, 'sphere', YEL, [0, 0.98, 0.06], 0.36);
-  eyes(g);
-  P(g, 'cone', ORA, [0, 0.93, 0.47], [0.1, 0.22, 0.08], [Math.PI / 2, 0, 0]);
-  P(g, 'cone', '#e06a10', [0, 0.88, 0.43], [0.07, 0.14, 0.05], [Math.PI / 2 + 0.2, 0, 0]);
-  for (const s of [-1, 1]) P(g, 'sphere', PINK, [s * 0.24, 0.9, 0.29], [0.06, 0.04, 0.03]);
+  P(head, 'sphere', YEL, [0, 0.98, 0.06], 0.36);
+  const { whites, pupils } = eyes(head);
+  const beakTop = P(head, 'cone', ORA, [0, 0.93, 0.47], [0.1, 0.22, 0.08], [Math.PI / 2, 0, 0]);
+  const beakLow = P(head, 'cone', '#e06a10', [0, 0.88, 0.43], [0.07, 0.14, 0.05], [Math.PI / 2 + 0.2, 0, 0]);
+  for (const s of [-1, 1]) P(head, 'sphere', PINK, [s * 0.24, 0.9, 0.29], [0.06, 0.04, 0.03]);
+  accessory(head, acc, team);
+  g.add(head);
   P(g, 'torus', team, [0, 0.77, 0.02], [0.32, 0.32, 0.3], [Math.PI / 2, 0, 0]);
   P(g, 'sphere', dark, [0, 0.71, 0.31], [0.08, 0.07, 0.06]);
-  accessory(g, acc, team);
+  g.userData = { head, wings, eyes: whites, pupils, beakTop, beakLow, robot: false };
   return g;
 }
 
@@ -160,7 +171,7 @@ export function makeChicken(team, acc, robot) {
   gun.position.set(-0.42, 0.6, 0.12);
   gun.visible = false;
   root.add(gun);
-  root.userData = { body, gun };
+  root.userData = { body, gun, ...body.userData };
   root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return root;
 }

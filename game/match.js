@@ -51,7 +51,7 @@ export class Match {
         id: this.chickens.length, team: t.idx, name: t.names[c] || `Pollito ${c + 1}`,
         x: p.x, y: p.y, z: p.z, vx: 0, vy: 0, vz: 0, yaw: this.r() * Math.PI * 2,
         hp: cfg.hp, alive: true, ground: false, air: true, knock: false, peakY: p.y, walk: 0,
-        dying: 0, rope: null, jet: 0, umbrella: false, hurtT: 0,
+        dying: 0, rope: null, jet: 0, umbrella: false, hurtT: 0, backflip: 0,
       });
     }
     // barriles y minas del mapa
@@ -269,6 +269,7 @@ export class Match {
     const f = back ? -1.4 : 3.6;
     ch.vx = Math.sin(ch.yaw) * f; ch.vz = Math.cos(ch.yaw) * f; ch.vy = back ? 9.5 : 6.8;
     ch.air = true; ch.ground = false; ch.knock = false; ch.peakY = ch.y;
+    if (back) ch.backflip = 0.72;
     this.emit({ k: 'sfx', s: back ? 'backflip' : 'jump', id: ch.id });
   }
 
@@ -695,6 +696,7 @@ export class Match {
       if (!c.alive) continue;
       if (c.hurtT > 0) c.hurtT -= dt;
       if (c.movingT > 0) c.movingT -= dt;
+      if (c.backflip > 0) c.backflip = Math.max(0, c.backflip - dt);
       if (c.dying > 0) {
         c.dying -= dt;
         if (c.dying <= 0) this.killChicken(c);
@@ -741,7 +743,7 @@ export class Match {
             } else {
               const fall = c.peakY - c.y;
               c.vx = 0; c.vy = 0; c.vz = 0;
-              c.air = false; c.ground = true; c.knock = false; c.umbrella = false;
+              c.air = false; c.ground = true; c.knock = false; c.umbrella = false; c.backflip = 0;
               if (fall > 3.6 && c.jet <= 0) {
                 this.damage(c, Math.min(45, (fall - 3.6) * 7), null);
                 this.emit({ k: 'sfx', s: 'thud' });
@@ -975,7 +977,7 @@ export class Match {
     const T = this.turn;
     const q = (v) => Math.round(v * 100) / 100;
     return {
-      ch: this.chickens.map((c) => [q(c.x), q(c.y), q(c.z), q(c.yaw), c.hp, (c.alive ? 1 : 0) | (c.air ? 2 : 0) | (c.movingT > 0 ? 4 : 0) | (c.rope ? 8 : 0) | (c.jet > 0 ? 16 : 0) | (c.umbrella ? 32 : 0) | (c.dying > 0 ? 64 : 0) | (c.hurtT > 0 ? 128 : 0), c.rope ? [q(c.rope.x), q(c.rope.y), q(c.rope.z)] : 0, q(c.walk % 10)]),
+      ch: this.chickens.map((c) => [q(c.x), q(c.y), q(c.z), q(c.yaw), c.hp, (c.alive ? 1 : 0) | (c.air ? 2 : 0) | (c.movingT > 0 ? 4 : 0) | (c.rope ? 8 : 0) | (c.jet > 0 ? 16 : 0) | (c.umbrella ? 32 : 0) | (c.dying > 0 ? 64 : 0) | (c.hurtT > 0 ? 128 : 0) | (c.backflip > 0 ? 256 : 0), c.rope ? [q(c.rope.x), q(c.rope.y), q(c.rope.z)] : 0, q(c.walk % 10)]),
       o: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => [o.id, o.kind, q(o.x), q(o.y), q(o.z), q(o.yaw), o.para ? 1 : 0, o.trig ? 1 : 0, o.name || 0]),
       cam: this.camera(),
       w: [q(this.wind.x), q(this.wind.z)],
@@ -994,7 +996,7 @@ export class Match {
   // estado para dibujar directamente en el anfitrión (sin redondear)
   view() {
     return {
-      chickens: this.chickens.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, yaw: c.yaw, hp: c.hp, alive: c.alive, air: c.air, walking: c.movingT > 0, rope: c.rope ? [c.rope.x, c.rope.y, c.rope.z] : null, jet: c.jet > 0, umbrella: c.umbrella, dying: c.dying > 0, hurt: c.hurtT > 0 })),
+      chickens: this.chickens.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, yaw: c.yaw, hp: c.hp, alive: c.alive, air: c.air, walking: c.movingT > 0, rope: c.rope ? [c.rope.x, c.rope.y, c.rope.z] : null, jet: c.jet > 0, umbrella: c.umbrella, dying: c.dying > 0, hurt: c.hurtT > 0, backflip: c.backflip > 0 })),
       objs: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => ({ id: o.id, kind: o.kind, x: o.x, y: o.y, z: o.z, yaw: o.yaw, para: !!o.para, trig: !!o.trig, name: o.name })),
       cam: this.camera(), water: this.water, phase: this.phase, turn: this.tview(),
     };
