@@ -100,14 +100,19 @@ export function startAmmo(set) {
 
 // ---- islas ----
 export const ISLANDS = [
-  { id: 'arenero', name: 'Arenero del Patio' },
-  { id: 'banera', name: 'Bañera Espumosa' },
-  { id: 'cocina', name: 'Cocina Gigante' },
-  { id: 'juguetes', name: 'Cuarto de Juguetes' },
-  { id: 'billar', name: 'Mesa de Billar' },
-  { id: 'castillo', name: 'Castillo del Zorro' },
+  { id: 'arenero', name: 'Arenero del Patio', colors: ['#f6d68c', '#ff5a5f', '#2ec4d6'] },
+  { id: 'banera', name: 'Bañera Espumosa', colors: ['#eaf6ff', '#ffd400', '#ff9ec7'] },
+  { id: 'cocina', name: 'Cocina Gigante', colors: ['#ff8fc7', '#f7d9a0', '#e3172b'] },
+  { id: 'juguetes', name: 'Cuarto de Juguetes', colors: ['#5b7cfa', '#ffd23f', '#ff4757'] },
+  { id: 'billar', name: 'Mesa de Billar', colors: ['#1fa45a', '#7a4a24', '#ffd23f'] },
+  { id: 'castillo', name: 'Castillo del Zorro', colors: ['#4caf50', '#9e9e9e', '#c0392b'] },
 ];
 export const RANDOM_ISLAND = 'aleatoria';
+export function islandName(id) {
+  if (!id || id === RANDOM_ISLAND) return '🎲 Aleatoria';
+  const f = ISLANDS.find((i) => i.id === id);
+  return f ? f.name : '🎲 Aleatoria';
+}
 
 // ---- configuración del lobby ----
 export const MODES = [

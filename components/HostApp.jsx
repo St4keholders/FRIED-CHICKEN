@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, weaponById } from '../game/constants';
+import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, islandName, weaponById } from '../game/constants';
 import { sha256 } from '../game/sha256';
 import { peerParamsString } from '../game/peeropts';
 import { chickenPortrait } from '../game/render';
@@ -124,7 +124,10 @@ function Lobby({ st, h, qr, url, share, msg }) {
         <div className="localc"><MyChicken me={st.players[st.local]} slot={st.local} players={st.players} cfg={st.cfg} onPick={(m) => h.pick(st.local, m)} /></div>
       )}
       <div className="card cfgc">
-        <h3>Ajustes de la partida</h3>
+        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>Ajustes de la partida</h3>
+          <span className="pill isl-pill">🗺️ {islandName(st.cfg.island)}</span>
+        </div>
         <ConfigPanel cfg={st.cfg} onCfg={(c) => h.setCfg(c)} canEdit humans={humans} />
       </div>
       <div className="slots">

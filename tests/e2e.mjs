@@ -58,9 +58,11 @@ const tapFire = async (p, ms = 150) => {
   const a = await phone(code, 'J1');
   await t.screenshot({ path: OUT + '1_lobby_tv.png' });
   await a.screenshot({ path: OUT + '1_lobby_j1.png', fullPage: true });
-  await a.selectOption('select.sel', 'billar');
+  await a.locator('.isl-btn[data-island="billar"]').click();
   await sleep(800);
-  check(await t.$eval('select.sel', (e) => e.value) === 'billar', 'el mapa elegido en el celular llega al TV');
+  check(await t.locator('.isl-btn.on[data-island="billar"]').count() === 1, 'el mapa elegido en el celular llega al TV');
+  check(await t.evaluate(() => !!(window.__fcHost && window.__fcHost.demo && window.__fcHost.demo.island === 'billar')), 'el fondo del lobby cambia a la isla elegida');
+  check((await t.locator('.isl-pill').innerText()).includes('Mesa de Billar'), 'el lobby del TV muestra el nombre de la isla elegida');
   await a.getByText('Sí, verlo aquí').click();
   await a.setViewportSize({ width: 860, height: 400 });
   await a.getByText('¡A PELEAR!').click();

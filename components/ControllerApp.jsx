@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, weaponById } from '../game/constants';
+import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, islandName, weaponById } from '../game/constants';
 import { peerOptionsFromURL } from '../game/peeropts';
 import { Audio } from '../game/audio';
 import { ConfigPanel, TeamBars, Results, MyChicken } from './Shared';
@@ -226,14 +226,18 @@ export default function ControllerApp() {
             </div>
             {isHost ? (
               <div className="card">
-                <h3>Ajustes (los manejas tú)</h3>
+                <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0 }}>Ajustes (los manejas tú)</h3>
+                  <span className="pill isl-pill">🗺️ {islandName(lobby.cfg.island)}</span>
+                </div>
                 <ConfigPanel cfg={lobby.cfg} onCfg={(cfg) => send({ t: 'cfg', cfg })} canEdit humans={humans} />
                 <button className="btn red big" style={{ width: '100%', marginTop: 14 }} onClick={() => { initAudio(); goFullscreen(); send({ t: 'start' }); }}>¡A PELEAR!</button>
               </div>
             ) : (
               <div className="card" style={{ textAlign: 'center' }}>
                 <h3 style={{ margin: 0 }}>Esperando a que J1 empiece…</h3>
-                <div className="small">{lobby.players.filter(Boolean).length} jugador(es) en la sala</div>
+                <div style={{ marginTop: 6 }}><span className="pill isl-pill">🗺️ Isla: {islandName(lobby.cfg.island)}</span></div>
+                <div className="small" style={{ marginTop: 6 }}>{lobby.players.filter(Boolean).length} jugador(es) en la sala</div>
                 <button className="btn white sm" style={{ marginTop: 10 }} onClick={() => { initAudio(); goFullscreen(); }}>Pantalla completa</button>
               </div>
             )}

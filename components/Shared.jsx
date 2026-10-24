@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { chickenPortrait } from '../game/render';
-import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, WEAPON_SETS, TEAM_COLORS } from '../game/constants';
+import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS } from '../game/constants';
 
 function Seg({ value, options, onChange, disabled }) {
   return (
@@ -37,11 +37,34 @@ export function ConfigPanel({ cfg, onCfg, canEdit, humans = 1, compact = false }
           <Seg value={cfg.cpuLevel} options={CPU_LEVELS} onChange={set('cpuLevel')} disabled={!canEdit} />
         </div>
       </div>
-      <div className="lab">Isla</div>
-      <select className="sel" value={cfg.island} disabled={!canEdit} onChange={(e) => onCfg({ island: e.target.value })}>
-        <option value={RANDOM_ISLAND}>🎲 Aleatoria</option>
-        {ISLANDS.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-      </select>
+      <div className="lab">Isla: <span className="isl-sel-name">{islandName(cfg.island)}</span></div>
+      <div className="isl-grid">
+        <button
+          type="button"
+          className={`isl-btn ${cfg.island === RANDOM_ISLAND ? 'on' : ''}`}
+          data-island={RANDOM_ISLAND}
+          disabled={!canEdit}
+          onClick={() => onCfg({ island: RANDOM_ISLAND })}
+        >
+          <span className="isl-sw rnd">🎲</span>
+          <span className="isl-nm">🎲 Aleatoria</span>
+        </button>
+        {ISLANDS.map((i) => (
+          <button
+            key={i.id}
+            type="button"
+            className={`isl-btn ${cfg.island === i.id ? 'on' : ''}`}
+            data-island={i.id}
+            disabled={!canEdit}
+            onClick={() => onCfg({ island: i.id })}
+          >
+            <span className="isl-sw">
+              {i.colors.map((c, idx) => <i key={idx} style={{ background: c }} />)}
+            </span>
+            <span className="isl-nm">{i.name}</span>
+          </button>
+        ))}
+      </div>
       <div className="row" style={{ gap: 12 }}>
         <div style={{ flex: 1 }}>
           <div className="lab">Pollitos por equipo</div>

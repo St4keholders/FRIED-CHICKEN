@@ -70,6 +70,7 @@ export class GameHost {
     window.addEventListener('keyup', this.onKeyUp);
     this.onVis = () => { if (document.hidden && this.phase === 'match' && !this.paused) this.togglePause(); };
     document.addEventListener('visibilitychange', this.onVis);
+    if (typeof window !== 'undefined') window.__fcHost = this;
     this.startDemo();
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
@@ -78,6 +79,7 @@ export class GameHost {
 
   destroy() {
     this.running = false;
+    if (typeof window !== 'undefined' && window.__fcHost === this) window.__fcHost = null;
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     document.removeEventListener('visibilitychange', this.onVis);
@@ -97,6 +99,7 @@ export class GameHost {
       turn: m ? m.turnInfo() : null, teams: m ? m.teamSummary() : null, matchPhase: m ? m.phase : null,
       wind: m ? m.wind : null, camYaw: this.renderer.camYaw, banner: this.banner, results: this.results,
       island: m ? islandTheme(m.island).name : '', suddenIn: m ? Math.max(0, Math.ceil(m.cfg.sudden * 60 - m.time)) : 0, sudden: m ? m.sudden : false,
+      demoIsland: this.demo ? this.demo.island : null,
       localTurn: m && m.turn && this.localSlot !== null && m.turn.slot === this.localSlot && !m.turn.cpu,
       kbTurn: m && m.turn && m.turn.slot !== null && this.players[m.turn.slot] && this.players[m.turn.slot].kind === 'kb',
     };
@@ -232,7 +235,11 @@ export class GameHost {
     if (HP_OPTIONS.includes(c.hp)) cfg.hp = c.hp;
     if (TURN_TIMES.includes(c.turnTime)) cfg.turnTime = c.turnTime;
     if (WEAPON_SETS.some((w) => w.id === c.weaponSet)) cfg.weaponSet = c.weaponSet;
+    const prevIsland = cfg.island;
     if (c.island === RANDOM_ISLAND || ISLANDS.some((i) => i.id === c.island)) cfg.island = c.island;
+    if (this.phase === 'lobby' && c.island && (cfg.island !== prevIsland || (cfg.island !== RANDOM_ISLAND && (!this.demo || this.demo.island !== cfg.island)))) {
+      this.startDemo(cfg.island === RANDOM_ISLAND ? null : cfg.island);
+    }
     if (SUDDEN_OPTIONS.includes(c.sudden)) cfg.sudden = c.sudden;
     if (Number.isInteger(c.cpuTeams) && c.cpuTeams >= 0 && c.cpuTeams <= 3) cfg.cpuTeams = c.cpuTeams;
     if (CPU_LEVELS.some((l) => l.id === c.cpuLevel)) cfg.cpuLevel = c.cpuLevel;
@@ -370,9 +377,10 @@ export class GameHost {
   }
 
   // ---------------- demo de fondo en el lobby ----------------
-  startDemo() {
+  startDemo(forceIsland) {
     const ids = ISLANDS.map((i) => i.id);
-    const island = ids[Math.floor(Math.random() * ids.length)];
+    const preferred = forceIsland || (this.cfg && this.cfg.island !== RANDOM_ISLAND ? this.cfg.island : null);
+    const island = preferred && ids.includes(preferred) ? preferred : ids[Math.floor(Math.random() * ids.length)];
     const teams = [0, 1].map((i) => ({
       id: 'd' + i, name: CPU_TEAM_NAMES[i], color: TEAM_COLORS[i].hex, dark: TEAM_COLORS[i].dark, acc: DEFAULT_ACC[i], robot: i === 1,
       cpu: 1, slots: [], alliance: 'd' + i, names: shuffle(i ? ROBOT_NAMES : CHICKEN_NAMES).slice(0, 3),
