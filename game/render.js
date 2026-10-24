@@ -312,6 +312,22 @@ export class Renderer {
     return -100;
   }
 
+  // comprueba si un rayo entre 'a' (pollito) y 'b' (cámara) choca con el terreno
+  rayBlocked(a, b) {
+    const t = this.terrain;
+    if (!t) return false;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 0.8) return false;
+    const steps = Math.ceil(dist / 0.35);
+    const s0 = Math.max(1, Math.ceil((0.65 / dist) * steps));
+    for (let s = s0; s <= steps; s++) {
+      const u = s / steps;
+      if (t.solid(a.x + dx * u, a.y + dy * u, a.z + dz * u)) return true;
+    }
+    return false;
+  }
+
   project(x, y, z) {
     tmpV.set(x, y, z).project(this.cam);
     if (tmpV.z > 1) return null;
@@ -633,9 +649,40 @@ export class Renderer {
         speed = 1.5;
         break;
     }
-    // que la cámara no se meta en el terreno
+    // que la cámara no se meta en el terreno ni quede tapada por montañas o decoraciones
     const g = this.groundBelow(pos.x, NY * VOX, pos.z);
     if (pos.y < g + 1.6) pos.y = g + 1.6;
+    if (this.terrain && (c.m === 'follow' || c.m === 'aim' || c.m === 'look')) {
+      const head = new THREE.Vector3(f.x, f.y + 0.95, f.z);
+      if (this.rayBlocked(head, pos)) {
+        const cand = new THREE.Vector3();
+        let found = false;
+        for (let s = 1; s <= 14 && !found; s++) {
+          const u = s / 14;
+          // 1) acercar y subir a la vez
+          cand.copy(pos).lerp(head, u * 0.85);
+          cand.y = Math.max(cand.y + u * 6.0, this.groundBelow(cand.x, cand.y + 4, cand.z) + 1.2);
+          if (!this.terrain.solid(cand.x, cand.y, cand.z) && !this.rayBlocked(head, cand)) {
+            pos.copy(cand);
+            found = true;
+            break;
+          }
+          // 2) acercar directo hacia el pollito (por delante del obstáculo)
+          cand.copy(pos).lerp(head, u * 0.88);
+          cand.y = Math.max(head.y + 0.6, cand.y);
+          if (!this.terrain.solid(cand.x, cand.y, cand.z) && !this.rayBlocked(head, cand)) {
+            pos.copy(cand);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          pos.copy(pos).lerp(head, 0.85);
+          pos.y = head.y + 1.2;
+        }
+        speed = Math.max(speed, 6.0);
+      }
+    }
     const k = 1 - Math.exp(-dt * speed);
     this.cam.position.lerp(pos, k);
     this.camLook.lerp(look, k);

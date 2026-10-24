@@ -39,7 +39,8 @@ async function phone(code, tag, size = { width: 412, height: 860 }) {
   const p = await browser.newPage({ viewport: size, isMobile: true, hasTouch: true });
   watch(p, tag);
   await p.goto(`${BASE}/mando${Q}&c=${code}`);
-  await sleep(4000);
+  for (let i = 0; i < 30 && !(await p.locator('.me, .top').count()); i++) await sleep(250);
+  await sleep(300);
   return p;
 }
 const waitTurn = async (pages, secs = 60) => {
@@ -80,6 +81,23 @@ const tapFire = async (p, ms = 150) => {
   check(!!p, 'llega el turno del jugador');
   if (p) {
     check(await t.locator('.radar .rdot.act').count() === 1 && await p.locator('.radar.sm .rdot.act').count() === 1, 'radar visible en TV y celular con vista con pollito del turno resaltado');
+    const occ = await t.evaluate(() => {
+      const h = window.__fcHost;
+      const m = h.match;
+      const r = h.renderer;
+      const ch = m.activeChicken();
+      const head = { x: ch.x, y: ch.y + 0.95, z: ch.z };
+      const nx = ch.x - Math.sin(ch.yaw) * 9, nz = ch.z - Math.cos(ch.yaw) * 9;
+      const normalPos = { x: nx, y: Math.max(ch.y + 6, r.groundBelow(nx, 24, nz) + 1.6), z: nz };
+      const mx = (head.x + normalPos.x) * 0.5, my = (head.y + normalPos.y) * 0.5, mz = (head.z + normalPos.z) * 0.5;
+      m.terrain.sphere(mx / 0.5, my / 0.5, mz / 0.5, 4, 1);
+      const blockedNormal = r.rayBlocked(head, normalPos);
+      for (let i = 0; i < 60; i++) r.updateCamera({ m: 'follow', f: [ch.x, ch.y, ch.z], yaw: ch.yaw }, 1 / 60);
+      const blockedAdjusted = r.rayBlocked(head, r.cam.position);
+      m.terrain.carve(mx, my, mz, 2.6, false);
+      return { blockedNormal, blockedAdjusted };
+    });
+    check(occ.blockedNormal && !occ.blockedAdjusted, 'la cámara evita quedar tapada por obstáculos del terreno');
     await t.evaluate(() => { if (window.__fcHost && window.__fcHost.match) window.__fcHost.match.objs = []; });
     const chBefore = await t.evaluate(() => window.__fcHost.match.turn.ch);
     await p.locator('.pick-next').click(); await sleep(300);
