@@ -147,7 +147,7 @@ export class Match {
       team: ti, ch: ch.id, slot, cpu: isCpu, clock: this.cfg.turnTime, retreat: 0,
       weapon: team.lastWeapon && team.inv[team.lastWeapon] !== 0 ? team.lastWeapon : 'bazuca', fuse: 3, mode: 'walk', pitch: 0.35, power: 0, charging: false,
       shots: 0, fired: false, over: false, cursor: null, view: false, prevFire: false, inp: { mx: 0, my: 0, fire: false, jumpHeld: false },
-      walker: null, track: null, ropeUsed: false, canPick, pickT: canPick ? 10 : 0,
+      walker: null, track: null, ropeUsed: false, canPick, pickT: canPick ? 15 : 0,
     };
     ch.rope = null; ch.jet = 0; ch.umbrella = false;
     this.phase = 'play';
@@ -245,6 +245,7 @@ export class Match {
         const next = alive[(idx + d + alive.length) % alive.length];
         if (next && next.id !== T.ch) {
           T.ch = next.id;
+          T.pickT = 15;
           if (T.mode === 'target') {
             T.cursor = { x: next.x + Math.sin(next.yaw) * 8, z: next.z + Math.cos(next.yaw) * 8 };
           }
@@ -1013,6 +1014,17 @@ export class Match {
       wind: Math.round(Math.hypot(this.wind.x, this.wind.z) * 10), dd: team.dd, jet: ch && ch.jet > 0, rope: ch && !!ch.rope, umbrella: ch && ch.umbrella,
       canPick: !!T.canPick,
     };
+  }
+
+  radarInfo() {
+    const activeId = this.turn ? this.turn.ch : -1;
+    return this.chickens.filter((c) => c.alive).map((c) => ({
+      id: c.id,
+      x: Math.round(c.x * 10) / 10,
+      z: Math.round(c.z * 10) / 10,
+      color: this.teams[c.team] ? this.teams[c.team].color : '#fff',
+      active: c.id === activeId,
+    }));
   }
 
   teamSummary() {

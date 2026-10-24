@@ -116,7 +116,7 @@ export class GameHost {
       players: this.players.map((p) => p && { slot: p.slot, kind: p.kind, color: p.color, acc: p.acc, teamName: p.teamName, names: p.names, team: p.team, connected: p.connected }),
       cfg: { ...this.cfg }, local: this.localSlot, touch: this.touch, hostSlot: this.hostSlot(),
       paused: this.paused, muted: this.audio.muted,
-      turn: m ? m.turnInfo() : null, teams: m ? m.teamSummary() : null, matchPhase: m ? m.phase : null,
+      turn: m ? m.turnInfo() : null, teams: m ? m.teamSummary() : null, radar: m ? m.radarInfo() : null, matchPhase: m ? m.phase : null,
       wind: m ? m.wind : null, camYaw: this.renderer.camYaw, banner: this.banner, results: this.results,
       island: m ? islandTheme(m.island).name : '', suddenIn: m ? Math.max(0, Math.ceil(m.cfg.sudden * 60 - m.time)) : 0, sudden: m ? m.sudden : false,
       demoIsland: this.demo ? this.demo.island : null,
@@ -738,11 +738,12 @@ export class GameHost {
       this.infoT = 0;
       const info = m.turnInfo();
       const teams = m.teamSummary();
+      const radar = m.radarInfo();
       this.players.forEach((p, i) => {
         if (!p || p.kind !== 'phone' || !p.connected) return;
         const myTeam = m.teams.find((t) => t.slots.includes(i));
         const msg = {
-          t: 'turn', info, you: !!(info && !info.cpu && info.slot === i), teams,
+          t: 'turn', info, you: !!(info && !info.cpu && info.slot === i), teams, radar,
           myTeam: myTeam ? myTeam.idx : -1, inv: myTeam ? myTeam.inv : null,
           paused: this.paused, sudden: m.sudden,
           suddenIn: Math.max(0, Math.ceil(m.cfg.sudden * 60 - m.time)),

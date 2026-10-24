@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PEER_PREFIX, TEAM_COLORS, SLOT_NAMES, WEAPONS, sensRad, islandName, weaponById } from '../game/constants';
 import { peerOptionsFromURL } from '../game/peeropts';
 import { Audio } from '../game/audio';
-import { ConfigPanel, ConfigSummary, TeamBars, MatchHud, Results, MyChicken } from './Shared';
+import { ConfigPanel, ConfigSummary, TeamBars, MatchHud, Radar, Results, MyChicken } from './Shared';
 import { TurnPad, WeaponGrid, SensPanel } from './TouchControls';
 
 function getPid() {
@@ -437,6 +437,7 @@ export default function ControllerApp() {
           wind={turn ? turn.wind : null}
           camYaw={camYaw}
           teams={teams}
+          radar={turn ? turn.radar : null}
           sudden={turn ? turn.sudden : false}
           suddenIn={turn ? turn.suddenIn : 0}
           showSudden={phase === 'match'}
@@ -469,6 +470,9 @@ export default function ControllerApp() {
         )}
         {viewOn && <button className="btn sm white" onClick={() => setPref({ sound: !prefs.sound })}>{prefs.sound ? '🔊' : '🔇'}</button>}
       </div>
+      {!pcMode && viewOn && phase === 'match' && turn && turn.radar && (
+        <Radar items={turn.radar} camYaw={camYaw} small />
+      )}
       {!pcMode && phase === 'match' && info && (viewOn || !myTurn) && (
         <div className="mhud" style={viewOn ? {} : { display: 'none' }}>
           <span className="tb" style={{ '--tc': info.color }}>{info.cpu ? '🤖 ' : ''}{info.teamName}</span>

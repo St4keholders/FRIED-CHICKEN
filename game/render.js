@@ -639,6 +639,7 @@ export class Renderer {
     const k = 1 - Math.exp(-dt * speed);
     this.cam.position.lerp(pos, k);
     this.camLook.lerp(look, k);
+    this.camYaw = c.yaw !== undefined ? c.yaw : Math.atan2(this.camLook.x - this.cam.position.x, this.camLook.z - this.cam.position.z);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 2.2);
       this.cam.position.x += (Math.random() - 0.5) * this.shake * 0.5;

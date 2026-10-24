@@ -22,6 +22,7 @@ const glArgs = process.platform === 'win32'
   : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'];
 const browser = await chromium.launch({ args: glArgs });
 function watch(page, tag) {
+  page.route(/fonts\.g(oogleapis|static)\.com/, (r) => r.abort()).catch(() => {});
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/TUNNEL|fonts|Failed to load resource/.test(m.text())) errors.push(`${tag}: ${m.text()}`); });
 }
@@ -73,11 +74,12 @@ const tapFire = async (p, ms = 150) => {
   await a.getByText('¡A PELEAR!').click();
   await sleep(1000);
   check((await t.locator('.banner').allInnerTexts()).join(' ').includes('Mesa de Billar') || await t.evaluate(() => !!(window.__fcHost && window.__fcHost.match && window.__fcHost.match.island === 'billar')), 'la partida usa el mapa elegido');
-  await sleep(5500);
+  await sleep(2500);
   check(await a.evaluate(() => !!(window.__fcMirror && window.__fcMirror.snaps.length)), 'el celular recibe la partida (vista en el celular)');
   const p = await waitTurn([a]);
   check(!!p, 'llega el turno del jugador');
   if (p) {
+    check(await t.locator('.radar .rdot.act').count() === 1 && await p.locator('.radar.sm .rdot.act').count() === 1, 'radar visible en TV y celular con vista con pollito del turno resaltado');
     await t.evaluate(() => { if (window.__fcHost && window.__fcHost.match) window.__fcHost.match.objs = []; });
     const chBefore = await t.evaluate(() => window.__fcHost.match.turn.ch);
     await p.locator('.pick-next').click(); await sleep(300);
@@ -168,13 +170,13 @@ const tapFire = async (p, ms = 150) => {
   const pc = await browser.newPage({ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false });
   watch(pc, 'PC2');
   await pc.goto(`${BASE}/mando${Q}&c=${code}`);
-  await sleep(3500);
+  for (let i = 0; i < 25 && !(await pc.locator('button[data-mode="pc"]').count()); i++) await sleep(300);
   check(await pc.locator('.ctrl.pcmode').count() === 1 && await pc.locator('button[data-mode="pc"].on').count() === 1, '/mando en PC entra en modo PC por defecto');
   await t.evaluate(() => window.__fcHost.setCfg({ cpuTeams: 0 }));
   await sleep(300);
   await t.keyboard.press('Enter'); await sleep(5000);
   check(await pc.evaluate(() => !!(window.__fcMirror && window.__fcMirror.snaps.length && !window.__fcMirror.renderer.phone)), 'el segundo PC ve la partida a pantalla completa');
-  check(await pc.locator('.hud .teamsb').count() === 1 && await pc.locator('.pad').count() === 0, 'el modo PC muestra el HUD del TV sin botones táctiles');
+  check(await pc.locator('.hud .teamsb').count() === 1 && await pc.locator('.hud .radar .rdot').count() >= 4 && await pc.locator('.pad').count() === 0, 'el modo PC muestra el HUD del TV y el radar sin botones táctiles');
   let kbDone = false, pcDone = false;
   for (let round = 0; round < 2; round++) {
     let who = null;

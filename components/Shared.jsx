@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { chickenPortrait } from '../game/render';
-import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, weaponById } from '../game/constants';
+import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, WORLD_X, WORLD_Z, weaponById } from '../game/constants';
 
 function Seg({ value, options, onChange, disabled }) {
   return (
@@ -165,8 +165,42 @@ export function TeamBars({ teams, current, className = 'teamsb' }) {
   );
 }
 
+// Radar circular (tipo Worms 4) orientado según la cámara
+export function Radar({ items, camYaw = 0, small = false }) {
+  if (!items || !items.length) return null;
+  const y = camYaw || 0;
+  const sin = Math.sin(y), cos = Math.cos(y);
+  const cx = WORLD_X / 2, cz = WORLD_Z / 2;
+  const maxR = WORLD_X * 0.46;
+  return (
+    <div className={`radar ${small ? 'sm' : ''}`} aria-label="Radar de pollitos">
+      <div className="radar-fov" />
+      <div className="radar-cross h" />
+      <div className="radar-cross v" />
+      {items.map((c) => {
+        const dx = c.x - cx, dz = c.z - cz;
+        const fwd = dx * sin + dz * cos;
+        const rgt = -dx * cos + dz * sin;
+        let nx = rgt / maxR;
+        let ny = -fwd / maxR;
+        const d = Math.hypot(nx, ny);
+        if (d > 0.85) { nx = (nx / d) * 0.85; ny = (ny / d) * 0.85; }
+        const left = 50 + nx * 50;
+        const top = 50 + ny * 50;
+        return (
+          <i
+            key={c.id}
+            className={`rdot ${c.active ? 'act' : ''}`}
+            style={{ left: `${left.toFixed(1)}%`, top: `${top.toFixed(1)}%`, '--tc': c.color }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 // HUD compartido entre el TV y el modo PC de /mando
-export function MatchHud({ turn, matchPhase, wind, camYaw, teams, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, onPickChicken, children }) {
+export function MatchHud({ turn, matchPhase, wind, camYaw, teams, radar, smallRadar = false, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, onPickChicken, children }) {
   const t = turn;
   const w = t ? weaponById(t.weapon) : null;
   const n = t && t.inv ? t.inv[t.weapon] : -1;
@@ -188,6 +222,7 @@ export function MatchHud({ turn, matchPhase, wind, camYaw, teams, sudden, sudden
         </div>
       )}
       <Wind wind={wind} camYaw={camYaw} />
+      <Radar items={radar} camYaw={camYaw} small={smallRadar} />
       {showPlay && w && !hideWeapon && (
         <div className="card wpn" style={onOpenWeapons ? { pointerEvents: 'auto', cursor: 'pointer' } : undefined} onClick={onOpenWeapons}>
           <span className="ic">{w.icon}</span>

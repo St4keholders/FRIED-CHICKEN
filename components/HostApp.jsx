@@ -156,6 +156,8 @@ function Hud({ st, h }) {
       wind={st.wind}
       camYaw={st.camYaw}
       teams={st.teams}
+      radar={st.radar}
+      smallRadar={st.local !== null}
       sudden={st.sudden}
       suddenIn={st.suddenIn}
       showSudden={st.phase === 'match' && st.local === null}
