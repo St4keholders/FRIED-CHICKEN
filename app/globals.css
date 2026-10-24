@@ -320,3 +320,7 @@ input, select { font-family: var(--body); }
   .cine-ava { width: 62px; height: 62px; }
   .cine-text { font-size: 13px; line-height: 1.25; }
 }
+
+/* ---------- medidor de fps y rendimiento ---------- */
+.fps-badge { position: fixed; top: 8px; right: 8px; z-index: 100; background: rgba(0,0,0,.82); color: #4cd964; font-family: var(--font); font-size: 13px; padding: 3px 8px 4px; border-radius: 8px; border: 2px solid var(--ink); box-shadow: 0 2px 0 var(--ink); pointer-events: none; }
+.fps-toast { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 100; background: rgba(255,244,214,.96); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 0 4px 0 var(--ink); padding: 6px 14px; font-weight: 900; font-size: 13px; color: var(--ink); pointer-events: none; animation: pop .25s ease-out; white-space: nowrap; }

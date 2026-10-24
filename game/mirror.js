@@ -20,6 +20,12 @@ export class MirrorView {
     this.terrain = null;
     this.clock = 0;
     this.init = null;
+    this.fps = 60;
+    this.fpsFrames = 0;
+    this.fpsTimer = 0;
+    this.lowFpsTime = 0;
+    this.onFps = null;
+    this.onLowFps = null;
   }
 
   // { seed, island, teams, chickens, edits }
@@ -75,6 +81,25 @@ export class MirrorView {
 
   frame(dt) {
     this.clock += dt;
+    this.fpsFrames++;
+    this.fpsTimer += dt;
+    if (this.fpsTimer >= 0.5) {
+      this.fps = Math.round(this.fpsFrames / this.fpsTimer);
+      this.fpsFrames = 0;
+      this.fpsTimer = 0;
+      if (this.onFps) this.onFps(this.fps);
+    }
+    if (this.renderer.quality !== 'ahorro' && this.fps > 0 && this.fps < 30) {
+      this.lowFpsTime += dt;
+      if (this.lowFpsTime >= 5.0) {
+        this.lowFpsTime = 0;
+        this.renderer.quality = 'ahorro';
+        this.renderer.resize();
+        if (this.onLowFps) this.onLowFps();
+      }
+    } else {
+      this.lowFpsTime = 0;
+    }
     const v = this.view();
     if (v && this.terrain) this.renderer.draw(v, dt);
     else this.renderer.draw({ chickens: [], objs: [], cam: { m: 'orbit' } }, dt);

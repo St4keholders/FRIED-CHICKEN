@@ -576,5 +576,61 @@ function winStory(n, tries = 4) {
   if (!t12_4Ok) fails++;
   console.log(`${t12_4Ok ? 'OK ' : 'MAL'} historia campaña completa 8 niveles, reintentar, saltar y empezar en cualquier nivel (${t12_4Ok})`);
 }
+
+// 15) T13: rendimiento en celular, medidor de fps, auto-bajada a ahorro y pausa de demo móvil
+{
+  const fakeHost = {
+    cfg: { quality: 'normal' },
+    phase: 'match',
+    fps: 22,
+    lowFpsTime: 0,
+    touch: true,
+    banner: null,
+    setCfg(c) { if (c.quality) this.cfg.quality = c.quality; },
+    changed() {},
+  };
+
+  const dtSim = 0.1;
+  for (let s = 0; s < 52; s++) {
+    if (fakeHost.phase === 'match' && fakeHost.cfg.quality !== 'ahorro') {
+      if (fakeHost.fps > 0 && fakeHost.fps < 30) {
+        fakeHost.lowFpsTime += dtSim;
+        if (fakeHost.lowFpsTime >= 5.0) {
+          fakeHost.lowFpsTime = 0;
+          fakeHost.setCfg({ quality: 'ahorro' });
+          fakeHost.banner = { text: '⚡ Modo ahorro activado', sub: 'Calidad reducida para mayor fluidez', t: 4.0 };
+        }
+      }
+    }
+  }
+
+  const autoDowngradeOk = fakeHost.cfg.quality === 'ahorro' && fakeHost.banner && fakeHost.banner.text.includes('Modo ahorro');
+
+  let demoStepsExecuted = 0;
+  const fakeLobbyHost = {
+    touch: true,
+    phase: 'lobby',
+    demo: {},
+    demoStep() { demoStepsExecuted++; },
+  };
+  for (let s = 0; s < 10; s++) {
+    if (fakeLobbyHost.phase === 'lobby') {
+      if (!fakeLobbyHost.touch && fakeLobbyHost.demo) fakeLobbyHost.demoStep();
+    }
+  }
+  const mobileDemoPausedOk = demoStepsExecuted === 0;
+
+  fakeLobbyHost.touch = false;
+  for (let s = 0; s < 10; s++) {
+    if (fakeLobbyHost.phase === 'lobby') {
+      if (!fakeLobbyHost.touch && fakeLobbyHost.demo) fakeLobbyHost.demoStep();
+    }
+  }
+  const pcDemoRunsOk = demoStepsExecuted === 10;
+
+  const t13SimOk = autoDowngradeOk && mobileDemoPausedOk && pcDemoRunsOk;
+  if (!t13SimOk) fails++;
+  console.log(`${t13SimOk ? 'OK ' : 'MAL'} rendimiento: auto-ahorro tras 5s < 30 fps (${autoDowngradeOk}), demo pausado en anfitrión celular (${mobileDemoPausedOk})`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

@@ -56,6 +56,11 @@ export class GameHost {
     this.mouseLocked = false;
     this.mouseFire = false;
     this.paused = false;
+    this.showFps = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fps') === '1';
+    this.fps = 60;
+    this.fpsFrames = 0;
+    this.fpsTimer = 0;
+    this.lowFpsTime = 0;
     this.match = null;
     this.cinema = null;
     this.unlockedZorro = undefined;
@@ -146,6 +151,8 @@ export class GameHost {
       story: m && m.story ? m.storyView() : null,
       storyLevel: (this.cfg && this.cfg.storyLevel) || 1,
       unlockedZorro: this.isZorroUnlocked(),
+      fps: this.fps,
+      showFps: this.showFps,
     };
   }
   changed() { this.onChange && this.onChange(this.snapshot()); }
@@ -888,7 +895,30 @@ export class GameHost {
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (dt > 0.1) dt = 0.1;
-    if (this.phase === 'lobby' && this.demo) this.demoStep(dt);
+    this.fpsFrames++;
+    this.fpsTimer += dt;
+    if (this.fpsTimer >= 0.5) {
+      this.fps = Math.round(this.fpsFrames / this.fpsTimer);
+      this.fpsFrames = 0;
+      this.fpsTimer = 0;
+    }
+    if (this.phase === 'match' && this.cfg.quality !== 'ahorro') {
+      if (this.fps > 0 && this.fps < 30) {
+        this.lowFpsTime += dt;
+        if (this.lowFpsTime >= 5.0) {
+          this.lowFpsTime = 0;
+          this.setCfg({ quality: 'ahorro' });
+          this.banner = { text: '⚡ Modo ahorro activado', sub: 'Calidad reducida para mayor fluidez', t: 4.0 };
+          this.changed();
+        }
+      } else {
+        this.lowFpsTime = 0;
+      }
+    }
+    // Si el anfitrión es un celular, pausar la física del demo en el lobby para ahorrar CPU y batería
+    if (this.phase === 'lobby') {
+      if (!this.touch && this.demo) this.demoStep(dt);
+    }
     else if (this.phase === 'cinematic') this.cinemaStep(dt);
     else if (this.match) this.matchStep(dt);
     if (this.banner) { this.banner.t -= dt; if (this.banner.t <= 0) { this.banner = null; this.changed(); } }

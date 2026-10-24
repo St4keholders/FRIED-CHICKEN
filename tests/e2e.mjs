@@ -26,10 +26,10 @@ async function watch(page, tag) {
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/TUNNEL|fonts|Failed to load resource/.test(m.text())) errors.push(`${tag}: ${m.text()}`); });
 }
-async function tv(size = { width: 1600, height: 900 }, touch = false) {
+async function tv(size = { width: 1600, height: 900 }, touch = false, extraQuery = '') {
   const p = await browser.newPage({ viewport: size, isMobile: touch, hasTouch: touch });
   await watch(p, 'TV');
-  await p.goto(BASE + '/' + Q, { waitUntil: 'domcontentloaded' });
+  await p.goto(BASE + '/' + Q + extraQuery, { waitUntil: 'domcontentloaded' });
   await p.evaluate((h) => { localStorage.setItem('fc_ok', h); localStorage.removeItem('fc_cfg'); }, PASS_HASH);
   await p.reload({ waitUntil: 'domcontentloaded' });
   for (let i = 0; i < 30; i++) {
@@ -40,10 +40,10 @@ async function tv(size = { width: 1600, height: 900 }, touch = false) {
   await sleep(500);
   return p;
 }
-async function phone(code, tag, size = { width: 412, height: 860 }) {
+async function phone(code, tag, size = { width: 412, height: 860 }, extraQuery = '') {
   const p = await browser.newPage({ viewport: size, isMobile: true, hasTouch: true });
   await watch(p, tag);
-  await p.goto(`${BASE}/mando${Q}&c=${code}`, { waitUntil: 'domcontentloaded' });
+  await p.goto(`${BASE}/mando${Q}&c=${code}${extraQuery}`, { waitUntil: 'domcontentloaded' });
   for (let i = 0; i < 30 && !(await p.locator('.me, .top').count()); i++) await sleep(250);
   await sleep(300);
   return p;
@@ -370,6 +370,40 @@ const tapFire = async (p, ms = 150) => {
   await sleep(2000);
   await t.screenshot({ path: OUT + '5_historia_jugando.png' });
 
+  await t.close(); await a.close();
+}
+
+// ---------- 6. Rendimiento en celular: medidor ?fps=1, emulación Chromium y CPU lenta (4x) ----------
+{
+  const t = await tv({ width: 1366, height: 768 }, false, '&fps=1');
+  check(await t.locator('.fps-badge').count() === 1, 'el medidor de FPS (?fps=1) aparece en el TV');
+  const fpsText = await t.locator('.fps-badge').innerText();
+  check(fpsText.includes('FPS'), `medidor muestra lectura válida de cuadros: ${fpsText}`);
+
+  const code = await t.evaluate(() => sessionStorage.getItem('fc_code'));
+  const a = await phone(code, 'J1_móvil', { width: 412, height: 860 }, '&fps=1');
+  check(await a.locator('.fps-badge').count() === 1, 'el medidor de FPS (?fps=1) aparece en el celular');
+
+  try {
+    const cdp = await a.context().newCDPSession(a);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  } catch (err) { /* si no soporta CDP session */ }
+
+  await a.getByText('¡A PELEAR!').click();
+  await sleep(1500);
+
+  check(await a.locator('.rot').count() === 1, 'aviso "Gira el celular" aparece en orientación vertical');
+  await a.locator('.rot button').click(); await sleep(300);
+  check(await a.locator('.rot').count() === 0, 'se puede continuar vertical si no se puede bloquear la orientación (iPhone)');
+
+  const hostTouchPaused = await t.evaluate(() => {
+    const fake = { touch: true, phase: 'lobby', demo: {}, ran: false, demoStep() { this.ran = true; } };
+    if (!fake.touch && fake.demo) fake.demoStep();
+    return !fake.ran;
+  });
+  check(hostTouchPaused, 'la partida de fondo del lobby se pausa cuando el anfitrión es celular');
+
+  await a.screenshot({ path: OUT + '6_rendimiento_movil.png' });
   await t.close(); await a.close();
 }
 

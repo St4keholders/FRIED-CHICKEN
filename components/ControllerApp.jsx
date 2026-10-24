@@ -44,6 +44,10 @@ export default function ControllerApp() {
   const [cinema, setCinema] = useState(null);
   const [story, setStory] = useState(null);
   const [unlockedZorro, setUnlockedZorro] = useState(false);
+  const [fps, setFps] = useState(60);
+  const [fpsToast, setFpsToast] = useState('');
+  const [dismissRot, setDismissRot] = useState(false);
+  const showFps = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fps') === '1';
 
   const connRef = useRef(null);
   const mirrorRef = useRef(null);
@@ -78,7 +82,11 @@ export default function ControllerApp() {
     const upd = () => setPortrait(window.innerHeight > window.innerWidth);
     upd();
     window.addEventListener('resize', upd);
-    return () => window.removeEventListener('resize', upd);
+    window.addEventListener('orientationchange', upd);
+    return () => {
+      window.removeEventListener('resize', upd);
+      window.removeEventListener('orientationchange', upd);
+    };
   }, []);
 
   // conexión con el anfitrión
@@ -176,6 +184,11 @@ export default function ControllerApp() {
     import('../game/mirror').then(({ MirrorView }) => {
       if (!alive) return;
       mv = new MirrorView(stageRef.current, lobby && lobby.cfg ? lobby.cfg.quality : 'normal', !pcMode);
+      mv.onFps = (f) => setFps(f);
+      mv.onLowFps = () => {
+        setFpsToast('⚡ Modo ahorro activado para mayor fluidez');
+        setTimeout(() => setFpsToast(''), 4000);
+      };
       mirrorRef.current = mv;
       window.__fcMirror = mv;
       if (pendingInit.current) { mv.setInit(pendingInit.current); pendingInit.current = null; }
@@ -388,7 +401,9 @@ export default function ControllerApp() {
   if (phase === 'lobby' && me) {
     const pick = (m) => { initAudio(); send({ t: 'pick', ...m }); };
     return (
-      <div className={`ctrl ${pcMode ? 'pcmode' : ''}`} onPointerDown={initAudio}>
+      <div className={`ctrl ${pcMode ? 'pcmode' : ''}`} onPointerDown={initAudio} onTouchStart={initAudio}>
+        {showFps && <div className="fps-badge">⚡ {fps || 60} FPS</div>}
+        {fpsToast && <div className="fps-toast">{fpsToast}</div>}
         <div className="scroll">
           <div className="stack" style={{ maxWidth: 560, margin: '0 auto' }}>
             <MyChicken me={me} slot={slot} players={lobby.players} cfg={lobby.cfg} onPick={pick} unlockedZorro={unlockedZorro} />
@@ -444,7 +459,9 @@ export default function ControllerApp() {
   const camYaw = mirrorRef.current && mirrorRef.current.renderer ? mirrorRef.current.renderer.camYaw : 0;
 
   return (
-    <div className={`ctrl ${pcMode ? 'pcmode' : ''}`} onPointerDown={() => { initAudio(); }}>
+    <div className={`ctrl ${pcMode ? 'pcmode' : ''}`} onPointerDown={() => { initAudio(); }} onTouchStart={() => { initAudio(); }}>
+      {showFps && <div className="fps-badge">⚡ {fps || 60} FPS</div>}
+      {fpsToast && <div className="fps-toast">{fpsToast}</div>}
       {viewOn && phase !== 'lobby' && <div className="mstage" ref={stageRef} />}
       {phase === 'cinematic' && cinema && (
         <CinematicOverlay
@@ -576,7 +593,17 @@ export default function ControllerApp() {
           onSkipStory={() => send({ t: 'story_skip' })}
         />
       )}
-      {!pcMode && phase === 'match' && portrait && <div className="rot"><div><div className="ph">📱</div>Gira el celular para jugar</div></div>}
+      {!pcMode && phase === 'match' && portrait && !dismissRot && (
+        <div className="rot">
+          <div>
+            <div className="ph">📱</div>
+            Gira el celular para jugar
+            <div style={{ marginTop: 14 }}>
+              <button type="button" className="btn sm white" onClick={() => setDismissRot(true)}>Seguir vertical</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

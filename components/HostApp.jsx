@@ -94,7 +94,8 @@ export default function HostApp() {
   const unlockAudio = () => { if (h) { h.audio.init(); if (st && st.phase === 'lobby' && h.audio.song === -1) h.audio.playSong(0); } };
 
   return (
-    <div className="stage" ref={stage} onPointerDown={unlockAudio}>
+    <div className="stage" ref={stage} onPointerDown={unlockAudio} onTouchStart={unlockAudio}>
+      {st && st.showFps && <div className="fps-badge">⚡ {st.fps || 60} FPS</div>}
       {st && st.phase === 'lobby' && <Lobby st={st} h={h} qr={qr} url={url} share={share} msg={msg} />}
       {st && st.phase === 'cinematic' && (
         <CinematicOverlay
