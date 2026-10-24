@@ -30,7 +30,7 @@ function loadCfg() {
 const KEYS = {
   up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   fire: ['Space'], jump: ['KeyJ', 'Enter', 'NumpadEnter'], back: ['KeyK', 'Backspace'], next: ['KeyE', 'Tab'], prev: ['KeyQ'],
-  aim: ['KeyR'], view: ['KeyC'],
+  aim: ['KeyR'], view: ['KeyC'], fp: ['KeyV'],
 };
 
 export class GameHost {
@@ -323,7 +323,7 @@ export class GameHost {
   playerAct(slot, a) {
     const m = this.match;
     if (!m || this.paused || !m.turn || m.turn.cpu || m.turn.slot !== slot) return;
-    if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'surrender', 'pickch'].includes(a.t)) m.act(a);
+    if (['jump', 'back', 'weapon', 'fuse', 'aim', 'view', 'fp', 'surrender', 'pickch'].includes(a.t)) m.act(a);
   }
 
   playerAim(slot, dyaw, dpitch) {
@@ -382,6 +382,7 @@ export class GameHost {
     else if (has('back')) m.act({ t: 'back' });
     else if (has('aim')) m.act({ t: 'aim' });
     else if (has('view')) m.act({ t: 'view' });
+    else if (has('fp')) m.act({ t: 'fp' });
     else if (code === 'Tab' && m.turn.canPick) m.act({ t: 'pickch', d: e.shiftKey ? -1 : 1 });
     else if (has('next') || has('prev')) this.cycleWeapon(has('next') ? 1 : -1);
     else if (/^Digit[1-5]$/.test(code)) m.act({ t: 'fuse', v: +code.slice(5) });

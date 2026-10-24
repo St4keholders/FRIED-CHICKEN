@@ -240,6 +240,7 @@ export default function ControllerApp() {
       else if (c === 'KeyK' || c === 'Backspace') send({ t: 'act', a: { t: 'back' } });
       else if (c === 'KeyR') send({ t: 'act', a: { t: 'aim' } });
       else if (c === 'KeyC') send({ t: 'act', a: { t: 'view' } });
+      else if (c === 'KeyV') send({ t: 'act', a: { t: 'fp' } });
       else if (c === 'Tab' && turnRef.current && turnRef.current.info && turnRef.current.info.canPick) send({ t: 'act', a: { t: 'pickch', d: e.shiftKey ? -1 : 1 } });
       else if (c === 'KeyE' || c === 'Tab') cyclePcWeapon(1);
       else if (c === 'KeyQ') cyclePcWeapon(-1);
@@ -444,6 +445,7 @@ export default function ControllerApp() {
           kbTurn={myTurn}
           onOpenWeapons={myTurn && info ? () => setPcGrid(true) : null}
           onPickChicken={myTurn && info && info.canPick ? (d) => send({ t: 'act', a: { t: 'pickch', d } }) : null}
+          onToggleFp={myTurn && info ? () => send({ t: 'act', a: { t: 'fp' } }) : null}
         >
           {pcGrid && myTurn && info && (
             <WeaponGrid

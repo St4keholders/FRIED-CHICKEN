@@ -95,5 +95,25 @@ for (const w of WEAPONS) {
   if (!okStart || !okLand) fails++;
   console.log(`${okStart && okLand ? 'OK ' : 'MAL'} voltereta en salto atrás (backflip)`);
 }
+
+// 6) vista en primera persona (fp) para bazuca, granada y maíz pira
+{
+  const m = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 321, island: 'arenero' });
+  while (m.phase !== 'play') m.update(dt);
+  let ok = true;
+  for (const w of ['bazuca', 'granada', 'maiz']) {
+    m.act({ t: 'weapon', w });
+    m.act({ t: 'fp' });
+    if (!m.turn.fp || m.camera().m !== 'fp') ok = false;
+    m.act({ t: 'fp' });
+    if (m.turn.fp || m.camera().m === 'fp') ok = false;
+  }
+  m.act({ t: 'weapon', w: 'bazuca' });
+  m.act({ t: 'fp' });
+  m.act({ t: 'weapon', w: 'escopeta' });
+  if (m.turn.fp || m.camera().m === 'fp') ok = false;
+  if (!ok) fails++;
+  console.log(`${ok ? 'OK ' : 'MAL'} vista en primera persona para bazuca, granada y maíz`);
+}
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

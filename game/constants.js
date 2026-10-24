@@ -98,6 +98,9 @@ export function startAmmo(set) {
   return inv;
 }
 
+export const FP_WEAPONS = ['bazuca', 'granada', 'maiz'];
+export function canFpWeapon(id) { return FP_WEAPONS.includes(id); }
+
 // ---- islas ----
 export const ISLANDS = [
   { id: 'arenero', name: 'Arenero del Patio', colors: ['#f6d68c', '#ff5a5f', '#2ec4d6'] },

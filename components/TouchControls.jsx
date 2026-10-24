@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { WEAPONS, SENS_OPTIONS, sensRad, weaponById } from '../game/constants';
+import { WEAPONS, SENS_OPTIONS, sensRad, weaponById, canFpWeapon } from '../game/constants';
 
 function vib(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* nada */ } }
 
@@ -201,6 +201,11 @@ export function TurnPad({ info, inv, onInput, onAct, onAim, prefs }) {
           <span>🐔 {info.ch}</span>
           <button type="button" className="pick-next" onClick={() => { vib(12); onAct({ t: 'pickch', d: 1 }); }}>▶</button>
         </div>
+      )}
+      {!info.retreat && !info.walker && canFpWeapon(w.id) && (
+        <button type="button" className={`fp-btn ${info.fp ? 'on' : ''}`} title="Vista en primera persona" onClick={() => { vib(15); onAct({ t: 'fp' }); }}>
+          <span>👁‍🗨</span>
+        </button>
       )}
       {!info.retreat && !info.walker && (
         <button className="wbtn" onClick={() => setGrid(true)}>

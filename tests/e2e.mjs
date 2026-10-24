@@ -33,7 +33,7 @@ async function tv(size = { width: 1600, height: 900 }, touch = false) {
   await p.evaluate((h) => { localStorage.setItem('fc_ok', h); localStorage.removeItem('fc_cfg'); }, PASS_HASH);
   await p.reload({ waitUntil: 'domcontentloaded' });
   for (let i = 0; i < 30; i++) {
-    const ready = await p.evaluate(() => !!(window.__fcHost && window.__fcHost.peerStatus === 'open' && sessionStorage.getItem('fc_code'))).catch(() => false);
+    const ready = await p.evaluate(() => !!(window.__fcHost && window.__fcHost.peerStatus === 'ready' && sessionStorage.getItem('fc_code'))).catch(() => false);
     if (ready) break;
     await sleep(300);
   }
@@ -119,7 +119,7 @@ const tapFire = async (p, ms = 150) => {
       r.draw(v, 0.2);
       const acObj = r.chickens.get(activeId).obj;
       const flipOk = Math.abs(acObj.userData.body.rotation.x) > 0.5;
-      const flapOk = Math.abs(acObj.userData.wings[1].rotation.z - 0.35) > 0.1;
+      const flapOk = Math.abs(acObj.userData.wings[1].position.y - 0.55) < 0.01;
 
       ach.air = false; ach.backflip = false;
       v.objs.push({ id: 99999, kind: 'mina', x: ach.x + 1.0, y: ach.y, z: ach.z, yaw: 0 });
@@ -132,13 +132,41 @@ const tapFire = async (p, ms = 150) => {
       return { idleLook, flipOk, flapOk, scaredOk, cheerOk };
     });
     check(anims.idleLook && anims.flipOk && anims.flapOk && anims.scaredOk && anims.cheerOk, 'animaciones de pollitos: mirar al del turno, voltereta, aleteo, cara de susto y festejo');
-    await t.evaluate(() => { if (window.__fcHost && window.__fcHost.match) window.__fcHost.match.objs = []; });
+    await t.evaluate(() => {
+      if (window.__fcHost && window.__fcHost.match) {
+        window.__fcHost.match.objs = [];
+        if (window.__fcHost.match.turn) window.__fcHost.match.turn.clock = 60;
+      }
+    });
     const chBefore = await t.evaluate(() => window.__fcHost.match.turn.ch);
     await p.locator('.pick-next').click(); await sleep(300);
     const chAfter = await t.evaluate(() => window.__fcHost.match.turn.ch);
     await p.locator('.pick-prev').click(); await sleep(300);
     const chBack = await t.evaluate(() => window.__fcHost.match.turn.ch);
     check(chAfter !== chBefore && chBack === chBefore, 'elegir pollito del turno con ▶ y ◀ cambia el pollito activo');
+    await p.locator('.pad .fp-btn').click();
+    for (let i = 0; i < 20; i++) {
+      if (await t.evaluate(() => !!(window.__fcHost && window.__fcHost.match && window.__fcHost.match.turn && window.__fcHost.match.turn.fp))) break;
+      await sleep(100);
+    }
+    const fpCheck = await t.evaluate(() => {
+      const h = window.__fcHost;
+      const m = h.match;
+      const r = h.renderer;
+      r.shake = 0;
+      r.draw(m.view(), 1 / 60);
+      const xh = r.xhair.position;
+      const pr = r.project(xh.x, xh.y, xh.z);
+      const centered = !!(pr && Math.abs(pr.x - r.w / 2) < 8 && Math.abs(pr.y - r.h / 2) < 8);
+      const bodyHidden = !r.chickens.get(m.turn.ch).obj.userData.body.visible;
+      return { mode: m.camera().m, centered, bodyHidden };
+    });
+    check(fpCheck.mode === 'fp' && fpCheck.centered && fpCheck.bodyHidden, 'vista en primera persona (👁‍🗨): cámara en cabeza con mira centrada');
+    await p.locator('.pad .fp-btn').click();
+    for (let i = 0; i < 20; i++) {
+      if (await t.evaluate(() => !!(window.__fcHost && window.__fcHost.match && window.__fcHost.match.turn && !window.__fcHost.match.turn.fp))) break;
+      await sleep(100);
+    }
     await p.locator('.rb', { hasText: 'Apuntar' }).click(); await sleep(600);
     const p0 = await t.evaluate(() => window.__fcHost.match.turn.pitch);
     const jb = await p.locator('.joy').boundingBox();

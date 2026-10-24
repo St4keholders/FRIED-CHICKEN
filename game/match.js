@@ -1,7 +1,7 @@
 // Simulación autoritativa de una partida: turnos, física de pollitos, armas, objetos y victoria.
 // Corre solo en el anfitrión; los celulares reciben fotos (snapshots) y cambios del terreno.
 import { Terrain, rng } from './terrain.js';
-import { VOX, NX, NZ, WORLD_X, WORLD_Z, GRAVITY, PROJ_GRAVITY, CHICKEN_R, CHICKEN_H, RETREAT_TIME, WEAPONS, weaponById, startAmmo } from './constants.js';
+import { VOX, NX, NZ, WORLD_X, WORLD_Z, GRAVITY, PROJ_GRAVITY, CHICKEN_R, CHICKEN_H, RETREAT_TIME, WEAPONS, weaponById, startAmmo, canFpWeapon } from './constants.js';
 import { quote } from './voices.js';
 
 const R = CHICKEN_R, H = CHICKEN_H;
@@ -146,7 +146,7 @@ export class Match {
     this.turn = {
       team: ti, ch: ch.id, slot, cpu: isCpu, clock: this.cfg.turnTime, retreat: 0,
       weapon: team.lastWeapon && team.inv[team.lastWeapon] !== 0 ? team.lastWeapon : 'bazuca', fuse: 3, mode: 'walk', pitch: 0.35, power: 0, charging: false,
-      shots: 0, fired: false, over: false, cursor: null, view: false, prevFire: false, inp: { mx: 0, my: 0, fire: false, jumpHeld: false },
+      shots: 0, fired: false, over: false, cursor: null, view: false, fp: false, prevFire: false, inp: { mx: 0, my: 0, fire: false, jumpHeld: false },
       walker: null, track: null, ropeUsed: false, canPick, pickT: canPick ? 15 : 0,
     };
     ch.rope = null; ch.jet = 0; ch.umbrella = false;
@@ -174,6 +174,7 @@ export class Match {
     if (ch) { ch.rope = null; ch.jet = 0; }
     this.turn.charging = false;
     this.turn.mode = 'walk';
+    this.turn.fp = false;
     this.phase = 'settle';
     this.phaseT = 0;
     if (why === 'time') this.emit({ k: 'sfx', s: 'timeout' });
@@ -185,6 +186,7 @@ export class Match {
     this.turn.retreat = RETREAT_TIME;
     this.turn.mode = 'walk';
     this.turn.charging = false;
+    this.turn.fp = false;
   }
 
   // ---------------- entradas del jugador del turno ----------------
@@ -226,6 +228,7 @@ export class Match {
         if (team.inv[w.id] === 0) break;
         T.weapon = w.id; team.lastWeapon = w.id;
         T.charging = false; T.power = 0;
+        if (!canFpWeapon(w.id)) T.fp = false;
         if (w.aim === 'target' || w.aim === 'targetpower') {
           T.mode = 'target';
           T.cursor = { x: ch.x + Math.sin(ch.yaw) * 8, z: ch.z + Math.cos(ch.yaw) * 8 };
@@ -235,7 +238,14 @@ export class Match {
       }
       case 'fuse': T.fuse = Math.max(1, Math.min(5, a.v | 0)); this.emit({ k: 'sfx', s: 'select' }); break;
       case 'aim': if (T.mode !== 'target') T.mode = T.mode === 'aim' ? 'walk' : 'aim'; break;
-      case 'view': T.view = !T.view; break;
+      case 'view': T.view = !T.view; if (T.view) T.fp = false; break;
+      case 'fp':
+        if (this.phase === 'play' && canFpWeapon(T.weapon) && !ch.rope && !ch.jet) {
+          T.fp = !T.fp;
+          if (T.fp) { T.view = false; if (T.mode !== 'target') T.mode = 'aim'; }
+          this.emit({ k: 'sfx', s: 'select' });
+        }
+        break;
       case 'pickch': {
         if (this.phase !== 'play' || !T.canPick || T.cpu) break;
         const alive = this.chickens.filter((c) => c.team === T.team && c.alive);
@@ -968,6 +978,7 @@ export class Match {
     if (!ch) return { m: 'orbit' };
     if (T && T.mode === 'target' && T.cursor) return { m: 'target', f: [T.cursor.x, this.terrain.surfaceY(T.cursor.x, T.cursor.z), T.cursor.z], yaw: ch.yaw };
     if (T && T.view) return { m: 'over', f: [ch.x, ch.y, ch.z], yaw: ch.yaw };
+    if (T && T.fp && this.phase === 'play' && canFpWeapon(T.weapon) && !ch.rope && !ch.jet) return { m: 'fp', f: [ch.x, ch.y, ch.z], yaw: ch.yaw, pitch: T.pitch, ch: ch.id };
     if (T && T.mode === 'aim' && (this.phase === 'play')) return { m: 'aim', f: [ch.x, ch.y, ch.z], yaw: ch.yaw, pitch: T.pitch };
     return { m: 'follow', f: [ch.x, ch.y, ch.z], yaw: ch.yaw };
   }
@@ -990,7 +1001,7 @@ export class Match {
   tview() {
     const T = this.turn;
     const q = (v) => Math.round(v * 100) / 100;
-    return T ? { team: T.team, ch: T.ch, clock: Math.ceil(T.clock), retreat: Math.ceil(T.retreat), weapon: T.weapon, mode: T.mode, pitch: q(T.pitch), power: q(T.power), charging: T.charging ? 1 : 0, cursor: T.cursor ? [q(T.cursor.x), q(T.cursor.z)] : 0, fuse: T.fuse, shots: T.shots, walker: !!T.walker } : null;
+    return T ? { team: T.team, ch: T.ch, clock: Math.ceil(T.clock), retreat: Math.ceil(T.retreat), weapon: T.weapon, mode: T.mode, fp: !!T.fp, pitch: q(T.pitch), power: q(T.power), charging: T.charging ? 1 : 0, cursor: T.cursor ? [q(T.cursor.x), q(T.cursor.z)] : 0, fuse: T.fuse, shots: T.shots, walker: !!T.walker } : null;
   }
 
   // estado para dibujar directamente en el anfitrión (sin redondear)
@@ -1011,7 +1022,7 @@ export class Match {
     return {
       team: T.team, teamName: team.name, color: team.color, ch: ch ? ch.name : '', chId: T.ch, slot: T.slot, cpu: T.cpu,
       clock: Math.ceil(T.clock), retreat: this.phase === 'retreat' ? Math.ceil(T.retreat) : 0, phase: this.phase,
-      weapon: T.weapon, fuse: T.fuse, mode: T.mode, inv: team.inv, walker: !!T.walker, power: T.power, charging: T.charging,
+      weapon: T.weapon, fuse: T.fuse, mode: T.mode, fp: !!T.fp, inv: team.inv, walker: !!T.walker, power: T.power, charging: T.charging,
       pitch: Math.round(T.pitch * 1000) / 1000, yaw: ch ? Math.round(ch.yaw * 1000) / 1000 : 0,
       wind: Math.round(Math.hypot(this.wind.x, this.wind.z) * 10), dd: team.dd, jet: ch && ch.jet > 0, rope: ch && !!ch.rope, umbrella: ch && ch.umbrella,
       canPick: !!T.canPick,

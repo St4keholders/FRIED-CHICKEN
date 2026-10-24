@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { chickenPortrait } from '../game/render';
-import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, WORLD_X, WORLD_Z, weaponById } from '../game/constants';
+import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, PICK_CHICKEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, WORLD_X, WORLD_Z, weaponById, canFpWeapon } from '../game/constants';
 
 function Seg({ value, options, onChange, disabled }) {
   return (
@@ -200,7 +200,7 @@ export function Radar({ items, camYaw = 0, small = false }) {
 }
 
 // HUD compartido entre el TV y el modo PC de /mando
-export function MatchHud({ turn, matchPhase, wind, camYaw, teams, radar, smallRadar = false, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, onPickChicken, children }) {
+export function MatchHud({ turn, matchPhase, wind, camYaw, teams, radar, smallRadar = false, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, onPickChicken, onToggleFp, children }) {
   const t = turn;
   const w = t ? weaponById(t.weapon) : null;
   const n = t && t.inv ? t.inv[t.weapon] : -1;
@@ -230,6 +230,9 @@ export function MatchHud({ turn, matchPhase, wind, camYaw, teams, radar, smallRa
             <div className="nm">{w.name}</div>
             <div className="am">{n < 0 ? 'Munición infinita' : `Quedan ${n}`}{w.fuse ? ` · Mecha ${t.fuse}s` : ''}</div>
           </div>
+          {onToggleFp && !t.retreat && !t.walker && canFpWeapon(w.id) && (
+            <button type="button" className={`btn sm ${t.fp ? 'yellow' : 'white'} fp-btn`} title="Vista en primera persona (V)" onClick={(e) => { e.stopPropagation(); onToggleFp(); }}>👁‍🗨</button>
+          )}
           {onOpenWeapons && !t.retreat && !t.walker && (
             <button type="button" className="btn sm yellow wopen-btn" onClick={(e) => { e.stopPropagation(); onOpenWeapons(); }}>🎒 Armas</button>
           )}
@@ -246,7 +249,7 @@ export function MatchHud({ turn, matchPhase, wind, camYaw, teams, radar, smallRa
       )}
       {kbTurn && showPlay && (
         <div className="card keys">
-          <b>Teclado y mouse:</b> W/S caminar · A/D girar · Clic en el juego: apuntar con mouse y disparar (clic izq.) · Clic der./R: 🎯 apuntar · Rueda/E/Q: arma · Espacio: disparar · J/K: saltar · 1-5: mecha · C: mapa · Esc: soltar mouse
+          <b>Teclado y mouse:</b> W/S caminar · A/D girar · Clic en el juego: apuntar con mouse y disparar (clic izq.) · Clic der./R: 🎯 apuntar · V: 👁‍🗨 1.ª persona · Rueda/E/Q: arma · Espacio: disparar · J/K: saltar · 1-5: mecha · C: mapa · Esc: soltar mouse
         </div>
       )}
       {children}

@@ -444,6 +444,7 @@ export class Renderer {
     const T = v.turn;
     const active = T ? T.ch : -1;
     const ach = v.chickens.find((s) => s.id === active);
+    const isFp = !!(v.cam && v.cam.m === 'fp');
     // pollitos
     for (const s of v.chickens) {
       const c = this.chickens.get(s.id);
@@ -457,6 +458,7 @@ export class Renderer {
       obj.position.set(s.x, ry, s.z);
       obj.rotation.y = s.yaw;
       const { body, gun, head, wings, eyes, pupils, beakTop, beakLow, robot } = obj.userData;
+      body.visible = !(isFp && s.id === active);
       const w = s.walking ? Math.sin(this.time * 14) : 0;
       const cheering = v.phase === 'over' && s.alive && !s.dying;
       const nearMine = !!(v.objs && v.objs.some((o) => o.kind === 'mina' && Math.hypot(o.x - s.x, o.y - s.y, o.z - s.z) < 3.2));
@@ -574,7 +576,7 @@ export class Renderer {
       // etiqueta
       if (c.hp !== s.hp) { c.hp = s.hp; c.lbl.querySelector('.lh').textContent = s.hp; }
       const p = this.project(s.x, ry + CHICKEN_H + 0.3, s.z);
-      if (p && s.alive) {
+      if (p && s.alive && !(isFp && s.id === active)) {
         c.lbl.style.display = '';
         c.lbl.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -100%)`;
         c.lbl.classList.toggle('act', s.id === active);
@@ -583,7 +585,7 @@ export class Renderer {
     }
     // flecha sobre el pollito del turno
     const ac = this.chickens.get(active);
-    if (ac && ac.lp && v.phase === 'play') {
+    if (ac && ac.lp && v.phase === 'play' && !isFp) {
       this.marker.style.display = '';
       this.marker.style.color = this.teamsMeta[ac.team].color;
       this.marker.style.transform = `translate(${ac.lp.x}px, ${ac.lp.y - 30 - Math.abs(Math.sin(this.time * 4)) * 10}px) translate(-50%, -100%)`;
@@ -642,10 +644,12 @@ export class Renderer {
     const showAim = ach && ach.alive && v.phase === 'play' && wp && (wp.aim === 'power' || wp.aim === 'direct') && !ach.rope && !ach.jet && T.mode !== 'target';
     if (showAim) {
       const cp = Math.cos(T.pitch), dx = Math.sin(ach.yaw) * cp, dy = Math.sin(T.pitch), dz = Math.cos(ach.yaw) * cp;
-      const ox = ach.x, oy = ach.y + 0.75, oz = ach.z;
+      const ox = isFp ? ach.x + dx * 0.25 : ach.x;
+      const oy = isFp ? ach.y + 1.02 : ach.y + 0.75;
+      const oz = isFp ? ach.z + dz * 0.25 : ach.z;
       this.xhair.visible = true;
       this.xhair.position.set(ox + dx * 4, oy + dy * 4, oz + dz * 4);
-      this.dots.forEach((d, i) => { d.visible = T.mode === 'aim'; d.position.set(ox + dx * (1 + i * 0.5), oy + dy * (1 + i * 0.5), oz + dz * (1 + i * 0.5)); });
+      this.dots.forEach((d, i) => { d.visible = !isFp && T.mode === 'aim'; d.position.set(ox + dx * (1 + i * 0.5), oy + dy * (1 + i * 0.5), oz + dz * (1 + i * 0.5)); });
     } else { this.xhair.visible = false; this.dots.forEach((d) => { d.visible = false; }); }
     if (T && T.mode === 'target' && T.cursor && v.phase === 'play') {
       this.cursor.visible = true;
@@ -714,6 +718,14 @@ export class Renderer {
         speed = 6;
         break;
       }
+      case 'fp': {
+        const p = c.pitch || 0;
+        const cp = Math.cos(p), dx = Math.sin(c.yaw) * cp, dy = Math.sin(p), dz = Math.cos(c.yaw) * cp;
+        pos = f.clone().add(new THREE.Vector3(dx * 0.25, 1.02, dz * 0.25));
+        look = pos.clone().add(new THREE.Vector3(dx * 12, dy * 12, dz * 12));
+        speed = 24;
+        break;
+      }
       case 'proj': case 'look': {
         const off = this.cam.position.clone().sub(this.camLook);
         off.y = 0;
@@ -742,8 +754,10 @@ export class Renderer {
         break;
     }
     // que la cámara no se meta en el terreno ni quede tapada por montañas o decoraciones
-    const g = this.groundBelow(pos.x, NY * VOX, pos.z);
-    if (pos.y < g + 1.6) pos.y = g + 1.6;
+    if (c.m !== 'fp') {
+      const g = this.groundBelow(pos.x, NY * VOX, pos.z);
+      if (pos.y < g + 1.6) pos.y = g + 1.6;
+    }
     if (this.terrain && (c.m === 'follow' || c.m === 'aim' || c.m === 'look')) {
       const head = new THREE.Vector3(f.x, f.y + 0.95, f.z);
       if (this.rayBlocked(head, pos)) {
@@ -775,9 +789,14 @@ export class Renderer {
         speed = Math.max(speed, 6.0);
       }
     }
-    const k = 1 - Math.exp(-dt * speed);
-    this.cam.position.lerp(pos, k);
-    this.camLook.lerp(look, k);
+    if (c.m === 'fp') {
+      this.cam.position.copy(pos);
+      this.camLook.copy(look);
+    } else {
+      const k = 1 - Math.exp(-dt * speed);
+      this.cam.position.lerp(pos, k);
+      this.camLook.lerp(look, k);
+    }
     this.camYaw = c.yaw !== undefined ? c.yaw : Math.atan2(this.camLook.x - this.cam.position.x, this.camLook.z - this.cam.position.z);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 2.2);
@@ -785,6 +804,7 @@ export class Renderer {
       this.cam.position.y += (Math.random() - 0.5) * this.shake * 0.5;
     }
     this.cam.lookAt(this.camLook);
+    this.cam.updateMatrixWorld();
   }
 
   dispose() {
