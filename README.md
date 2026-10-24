@@ -2,14 +2,15 @@
 
 Guerra de **pollitos de juguete por turnos** en 3D, al estilo *Worms 4: Mayhem*. Se juega en el televisor (o sin televisor, solo con celulares) y **cada celular o computador es un mando**.
 
-- Islas de vóxeles **100% destructibles** con cámara en tercera persona y primera persona.
+- Islas 3D lisas y **100% destructibles** con construcciones que se reconocen (castillo con murallas y foso, bañera con agua, mesa de billar con troneras, torta de tres pisos, casa de muñecas y tren elevado), con cámara en tercera y primera persona.
 - Hasta **4 jugadores** en simultáneo (con celulares o PCs), más equipos manejados por la CPU.
 - **Modos:** 
   - **Modo Historia ("El Gran Robo de los Huevos"):** Campaña de 8 niveles con cinemáticas cinemáticas procedurales, diálogos con retrato, objetivos especiales y jefes finales (Sargento Lata y Zorro Rufo).
   - **Versus:** Todos contra todos o por equipos.
   - **Cooperativo:** Juntos contra oleadas o equipos de la CPU.
 - **Equipos:** Cada jugador su propio equipo, o equipos compartidos (por ejemplo 2 contra 2 por turnos).
-- **19 armas y utilidades**, viento dinámico, cajas trampa, visor de trayectoria, fuego de barriles, cajas de regalo, minas y muerte súbita.
+- **24 armas y utilidades** con la potencia de *Worms 4*, viento dinámico, **cajas de armas tan buenas que toca ir por ellas**, cajas trampa, visor de trayectoria, fuego de barriles, minas y muerte súbita.
+- **Armas gigantes en las alas:** cada pollito carga su arma en grande (la bazuca parece bazuca) y hace gestos chistosos al disparar, lanzar, golpear, celebrar un golpe o darse cuenta de que le pegó a un amigo.
 - **Detalles interactivos por isla:** Espuma que frena en la bañera, bolas de billar que ruedan al explotar, gelatina que rebota, imanes irrompibles en la cocina y arena amortiguadora.
 - **Modo PC completo:** Juega en `/mando` desde otro computador con teclado, mouse libre (pointer lock), pantalla completa y HUD de TV.
 - **Animaciones y expresiones:** Volteretas hacia atrás (*backflip*), aleteo en el aire, caras de susto, saltos de festejo y pollitos que siguen la acción con la mirada.
@@ -47,9 +48,14 @@ Calcula el hash SHA-256 de la nueva contraseña (`echo -n 'nueva' | shasum -a 25
 
 ## Cómo se juega
 
-1. Abre el enlace en el PC/TV e ingresa la contraseña. Detrás del lobby verás una partida de demostración entre pollitos robot.
+1. Abre el enlace en el PC/TV e ingresa la contraseña. Detrás del lobby verás una partida de demostración entre pollitos de la CPU.
 2. Cada jugador escanea el **código QR** en pantalla (o ingresa a `/mando` y digita el código de 5 letras).
-3. En el celular o PC mando, cada jugador personaliza su **nombre de equipo, color, accesorio** (casco vikingo, sombrero vueltiao, gorra, corona, afro, o el accesorio desbloqueable del Zorro Rufo) y nombres de sus pollitos.
+3. En el celular o PC mando, cada jugador personaliza su **nombre de equipo, color, apariencia** y nombres de sus pollitos. La apariencia combina tres piezas (o 🎲 Al azar):
+   - 🎩 **Cabeza:** sombreros temáticos (vueltiao, chef, vaquero, pirata, mago, vikingo, fiesta, corona…) y pelucas o peinados (afro, mohicano arcoíris, cresta punk, tupé rockero, colita), más el desbloqueable del Zorro Rufo.
+   - 🥸 **Cara:** gafas de sol, lentes de nerd, máscara de luchador, antifaz de héroe, parche de pirata, nariz de payaso.
+   - 🧔 **Barba:** bigote, bigote francés, barba larga, barba de abuelo, candado, patillas.
+
+   Los equipos de la CPU también son pollitos normales con apariencias al azar (nada de robots).
 4. **J1 (anfitrión)** configura los ajustes del juego y pulsa **¡A PELEAR!** (o inicia el Modo Historia).
 
 ### Jugar desde otro computador (Modo PC)
@@ -108,8 +114,21 @@ Una campaña completa para jugar en solitario o en cooperativo:
 - **Selección de pollito:** Automático o **Elegir** (permite cambiar con quién juegas tu turno antes de actuar).
 - **Equipos:** Cada jugador su equipo o equipos compartidos.
 - **Equipos CPU y dificultad:** De 0 a 3 equipos manejados por IA (Fácil, Normal, Difícil).
-- **Reglas:** Pollitos por equipo (2 a 4), Puntos de vida (100, 150, 200), Tiempo de turno (30s, 45s, 60s), Armas (Clásico o Locura), Muerte súbita por agua (5, 10, 15 min), Fuego amigo.
+- **Reglas:** Pollitos por equipo (2 a 4), Puntos de vida (100, 150, 200), Tiempo de turno (30s, 45s, 60s), Armas (Clásico o Locura), Muerte súbita por agua (5, 10, 15 min), Fuego amigo. En **Clásico** se empieza con lo básico (bazuca, granada y escopeta sin límite, más un poco de maíz, chancla, cuerda, mina y vela) y lo demás sale de las cajas; en **Locura** hay de todo en cantidad.
 - **Rendimiento:** Calidad gráfica Alta, Normal o Ahorro de energía.
+
+---
+
+## Islas
+
+| Isla | Qué hay |
+| --- | --- |
+| 🏖️ **Arenero del Patio** | Dunas, marco de tablas para caminar por encima, tobogán con escalera, balde gigante, castillo de arena, pala-puente, volqueta y columpio. |
+| 🛁 **Bañera Espumosa** | Piso de baldosas y una tina de verdad con agua: patos, jabones, esponja y espuma adentro; grifo de metal, banquito para subir al borde, cepillo de dientes como rampa, rollo de papel y frascos de champú. |
+| 🎂 **Cocina Gigante** | Torta de tres pisos con rampas de chocolate y túnel, tostadora y sartén de metal, taza, torre de panqueques con escalera, rodillo, galletas e imanes de nevera irrompibles. |
+| 🧸 **Cuarto de Juguetes** | Casa de muñecas de dos pisos, tren sobre un riel elevado con rampas, cohete, escalera de libros, pirámide de bloques, torres de bloques y gelatina que rebota. |
+| 🎱 **Mesa de Billar** | Mesa alta con paño, bandas y seis troneras que caen al agua; tacos como rampas desde las islitas de abajo, triángulo, bolas que ruedan y banquitos. |
+| 🏰 **Castillo del Zorro** | Colina con foso, murallas con almenas y camino arriba, cuatro torres, portón con puente levadizo, escaleras, torre del homenaje con bandera, aldea y bosque. |
 
 ---
 
@@ -129,12 +148,18 @@ Una campaña completa para jugar en solitario o en cooperativo:
 | 🐔 **Mamá Gallina** | Guiada | Corre sola esquivando baches; vuelve a pulsar Disparar para inmolarla. |
 | 🌟 **Huevo de Oro** | Santa | *"¡Aleluyaaa!"*: Explosión celestial colosal que devasta el terreno. |
 | 🦜 **Guacamaya Teledirigida**| Aérea | Vuela con precisión teledirigida hasta el punto seleccionado. |
+| 🍌 **Bomba de Plátano Maduro** | Racimo | Se lanza con mecha y revienta en 5 plátanos que vuelven a explotar. |
+| 🦸 **Súper Gallina** | Guiada | Sale volando con capa; la manejas con el joystick y la estallas pulsando Disparar otra vez. |
+| 🐄 **Vaca de Concreto** | Aérea | Eliges el punto y cae del cielo rebotando y aplastando todo ("¡Muuu!"). |
+| 🌶️ **Ají Lanzallamas** | Directa | Mantén Disparar: chorro de fuego que quema y deja charcos encendidos. |
+| 🌾 **Metralleta de Maíz** | Directa | Ráfaga de 14 granos explosivos. |
 | ➰ **Cuerda de Lombriz** | Movilidad | Se ancla al terreno o techos para balancearse con inercia física. |
 | 🌀 **Ventilador a la Espalda**| Movilidad | Propulsor de vuelo temporal (mantén presionado Saltar). |
 | ☂️ **Sombrilla** | Movilidad | Descenso suave que elimina por completo el daño por caída. |
 | ✨ **Teletransporte** | Movilidad | Aparece instantáneamente en la posición elegida de la isla. |
 | 🧱 **Viga de Juguete** | Construcción | Coloca puentes o barricadas metálicas resistentes en el terreno. |
 | 🔭 **Visor** *(Cajas utilitarias)* | Soporte | Traza la parábola y trayectoria exacta anticipada del próximo disparo. |
+| 🎁 **Cajas de armas** | Premio | Caen casi todos los turnos (a veces dos). Traen armas fuertes y en cantidad: Vaca, Súper Gallina, Huevo de Oro, Plátano, Ají… También hay cajas de salud (+35) y de utilidad (doble daño, visor, tiempo extra). |
 | 📦 **Cajas Trampa** *(Peligro)* | Trampa | 10% de las cajas son trampas explosivas que vibran con luz roja antes de estallar. |
 | 🔥 **Fuego de Barriles** | Área | Los barriles destruidos dejan charcos de fuego que queman 5 HP/s. |
 

@@ -217,6 +217,7 @@ export class Terrain {
         h = water + 2 + Math.pow(Math.min(1, m), th.curve) * maxH + hills * Math.min(1, m * 3);
         if (th.terraces) { const tq = Math.round(h / th.terraces) * th.terraces; h += (tq - h) * 0.3; }
       }
+      if (th.height) h = th.height(i, k, h, noise, water);
       heights[k * NX + i] = Math.max(1, Math.min(NY - 6, h));
     }
     const H = (i, k) => heights[Math.max(0, Math.min(NZ - 1, k)) * NX + Math.max(0, Math.min(NX - 1, i))];
@@ -235,6 +236,7 @@ export class Terrain {
         if (depth < 1.3) m = M.TOP;
         else if (depth < 4.5) m = M.SUB;
         if (under) m = depth < 2.5 ? th.seabed || M.SUB : M.DEEP;
+        if (th.mat) m = th.mat(i, j, k, depth, m);
         this.v[id] = m;
       }
     }
@@ -284,7 +286,64 @@ export class Terrain {
       this.shape(i, j, k, Math.min(radial, vert), typeof m === 'function' ? m(i, j, k) : m);
     }
   }
+  // forma a la medida: sdf(x, y, z) en vóxeles (> 0 adentro) dentro de una caja
+  shapeFn(i0, j0, k0, i1, j1, k1, sdf, m) {
+    for (let j = Math.max(0, Math.floor(j0)); j <= Math.min(NY - 1, Math.ceil(j1)); j++)
+      for (let k = Math.max(0, Math.floor(k0)); k <= Math.min(NZ - 1, Math.ceil(k1)); k++)
+        for (let i = Math.max(0, Math.floor(i0)); i <= Math.min(NX - 1, Math.ceil(i1)); i++) {
+          const d = sdf(i + 0.5, j + 0.5, k + 0.5);
+          if (d > -2.5) this.shape(i, j, k, d, typeof m === 'function' ? m(i, j, k) : m);
+        }
+  }
+  // tubo (cápsula) entre dos puntos: troncos, rieles, mangos, puentes
+  tube(a, b, rad, m) {
+    const [ax, ay, az] = a, [bx, by, bz] = b;
+    const dx = bx - ax, dy = by - ay, dz = bz - az, L2 = dx * dx + dy * dy + dz * dz || 1;
+    const pad = rad + 2;
+    this.shapeFn(Math.min(ax, bx) - pad, Math.min(ay, by) - pad, Math.min(az, bz) - pad, Math.max(ax, bx) + pad, Math.max(ay, by) + pad, Math.max(az, bz) + pad, (x, y, z) => {
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy + (z - az) * dz) / L2));
+      return rad - Math.hypot(x - ax - dx * t, y - ay - dy * t, z - az - dz * t);
+    }, m);
+  }
+  // meseta: deja el suelo a la altura h (sube o baja) dentro de una elipse, con borde inclinado
+  plateau(ci, ck, rx, rz, h, slope = 6, m = M.TOP, lowerToo = true) {
+    for (let k = Math.max(0, Math.floor(ck - rz - slope)); k <= Math.min(NZ - 1, ck + rz + slope); k++)
+      for (let i = Math.max(0, Math.floor(ci - rx - slope)); i <= Math.min(NX - 1, ci + rx + slope); i++) {
+        const e = Math.hypot((i + 0.5 - ci) / rx, (k + 0.5 - ck) / rz);
+        const out = (e - 1) * Math.min(rx, rz);
+        const cur = this.topAt(i, k);
+        let target = h;
+        if (out > 0) { if (out >= slope) continue; target = h + (cur - h) * (out / slope); }
+        if (!lowerToo && target < cur) continue;
+        for (let j = 0; j < NY; j++) {
+          const depth = target - (j + 0.5);
+          const id = (j * NZ + k) * NX + i;
+          if (this.v[id] === M.METAL) continue;
+          this.d[id] = clamp8(ISO + depth * K);
+          if (depth > -1 && depth < 1.3) this.v[id] = m; else if (depth >= 1.3 && depth < 4.5 && this.v[id] !== m) this.v[id] = M.SUB;
+          else if (depth >= 4.5) this.v[id] = this.v[id] || M.DEEP;
+        }
+      }
+  }
+  // rampa caminable entre dos puntos del piso (alturas h0 y h1), con ancho w
+  ramp(i0, k0, h0, i1, k1, h1, w, m) {
+    const dx = i1 - i0, dk = k1 - k0, L = Math.hypot(dx, dk) || 1;
+    const nx = -dk / L, nk = dx / L;
+    for (let s = 0; s <= L; s += 0.5) {
+      const t = s / L, ci = i0 + dx * t, ck = k0 + dk * t, h = h0 + (h1 - h0) * t;
+      for (let o = -w / 2; o <= w / 2; o += 0.5) {
+        const i = Math.floor(ci + nx * o), k = Math.floor(ck + nk * o);
+        if (i < 0 || k < 0 || i >= NX || k >= NZ) continue;
+        for (let j = Math.max(0, Math.floor(h - 4)); j <= Math.min(NY - 1, Math.ceil(h + 1)); j++) {
+          const depth = h - (j + 0.5);
+          this.shape(i, j, k, depth, m);
+        }
+      }
+    }
+  }
+
   topAt(i, k) {
+    i = Math.floor(i); k = Math.floor(k);
     if (i < 0 || k < 0 || i >= NX || k >= NZ) return 0;
     for (let j = NY - 1; j >= 0; j--) if (this.d[(j * NZ + k) * NX + i] >= ISO) return j + 1;
     return 0;

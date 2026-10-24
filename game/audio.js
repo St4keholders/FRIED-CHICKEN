@@ -178,6 +178,11 @@ export class Audio {
       case 'win': [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => this.tone(f, 0.18, 'square', 0.14, null, i * 0.12)); break;
       case 'lose': [392, 370, 349, 330].forEach((f, i) => this.tone(f, 0.35, 'square', 0.12, null, i * 0.3)); break;
       case 'react': this.tone(1200, 0.06, 'sine', 0.08, 1600); break;
+      case 'vaca': this.tone(1400, 1.6, 'sine', 0.12, 300); break;
+      case 'moo': this.tone(160, 0.5, 'sawtooth', 0.14, 110); this.tone(170, 0.5, 'square', 0.06, 120); this.noise(0.15, 0.2, 500); break;
+      case 'platano': this.tone(500, 0.12, 'triangle', 0.12, 900); this.tone(700, 0.12, 'triangle', 0.1, 1200, 0.1); break;
+      case 'flame': this.noise(2.6, 0.22, 900, 400, 0, 'lowpass'); break;
+      case 'mg': this.noise(0.06, 0.25, 2500); this.tone(220, 0.04, 'square', 0.08, 120); break;
       default: break;
     }
   }

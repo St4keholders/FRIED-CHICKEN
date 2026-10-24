@@ -146,8 +146,10 @@ for (const w of WEAPONS) {
 
   // barril deja fuego que hace 5 de daño por segundo
   const target = m.chickens.find((c) => c.alive && c.id !== ch.id);
-  target.x = 32; target.z = 32; target.y = m.terrain.surfaceY(32, 32); target.vx = target.vy = target.vz = 0; target.air = false; target.ground = true;
-  const bar = m.addObj({ kind: 'barril', x: 32, y: target.y, z: 32, hp: 1 });
+  // un punto alto del mapa (para que el cráter no llegue al agua)
+  const hi = m.terrain.spawnPoints(20, 5).sort((a, b) => b.y - a.y)[0];
+  target.x = hi.x; target.z = hi.z; target.y = m.terrain.surfaceY(hi.x, hi.z); target.vx = target.vy = target.vz = 0; target.air = false; target.ground = true;
+  const bar = m.addObj({ kind: 'barril', x: hi.x, y: target.y, z: hi.z, hp: 1 });
   m.explodeObj(bar);
   const fireObj = m.objs.find((o) => o.kind === 'fuego' && !o.dead);
   target.x = fireObj.x; target.y = fireObj.y; target.z = fireObj.z; target.vx = target.vy = target.vz = 0; target.air = false; target.ground = true;
@@ -169,15 +171,16 @@ for (const w of WEAPONS) {
   while (mb.phase !== 'play') mb.update(dt);
   const cb = mb.activeChicken();
   cb.yaw = Math.PI / 2;
-  const jt = mb.terrain.topAt(54, 60);
-  mb.terrain.box(50, jt - 2, 56, 12, 4, 8, M.A);
-  cb.x = 27; cb.z = 30; cb.y = mb.terrain.surfaceY(27, 30); cb.vx = cb.vy = cb.vz = 0; cb.air = false; cb.ground = true;
+  // piso de baldosas por fuera de la tina (vóxel 54,36)
+  const jt = mb.terrain.topAt(54, 36);
+  mb.terrain.box(50, jt - 2, 32, 12, 4, 8, M.A);
+  cb.x = 27; cb.z = 18; cb.y = mb.terrain.surfaceY(27, 18); cb.vx = cb.vy = cb.vz = 0; cb.air = false; cb.ground = true;
   mb.control({ mx: 0, my: 1, fire: false });
   for (let i = 0; i < 20; i++) mb.playerStep(dt);
   const distNormal = cb.x - 27;
 
-  mb.terrain.box(50, jt - 2, 56, 12, 4, 8, M.WHITE);
-  cb.x = 27; cb.z = 30; cb.y = mb.terrain.surfaceY(27, 30); cb.vx = cb.vy = cb.vz = 0; cb.air = false; cb.ground = true;
+  mb.terrain.box(50, jt - 2, 32, 12, 4, 8, M.WHITE);
+  cb.x = 27; cb.z = 18; cb.y = mb.terrain.surfaceY(27, 18); cb.vx = cb.vy = cb.vz = 0; cb.air = false; cb.ground = true;
   for (let i = 0; i < 20; i++) mb.playerStep(dt);
   const distFoam = cb.x - 27;
   const foamSlowOk = distFoam > 0.05 && distFoam < distNormal * 0.65;
@@ -211,9 +214,10 @@ for (const w of WEAPONS) {
   const mj = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 444, island: 'juguetes' });
   while (mj.phase !== 'play') mj.update(dt);
   const cj = mj.activeChicken();
-  mj.terrain.box(58, 22, 58, 12, 8, 12, M.C);
-  const sy = mj.terrain.surfaceY(32, 32);
-  cj.x = 32; cj.z = 32; cj.y = sy + 0.05; cj.vx = 0; cj.vy = -8; cj.vz = 0; cj.air = true; cj.ground = false; cj.peakY = sy + 2;
+  const sp = mj.terrain.spawnPoints(1, 9)[0], pi = Math.floor(sp.x / 0.5), pk = Math.floor(sp.z / 0.5), pj = mj.terrain.topAt(pi, pk);
+  mj.terrain.box(pi - 6, pj - 2, pk - 6, 12, 4, 12, M.C);
+  const sy = mj.terrain.surfaceY(sp.x, sp.z);
+  cj.x = sp.x; cj.z = sp.z; cj.y = sy + 0.05; cj.vx = 0; cj.vy = -8; cj.vz = 0; cj.air = true; cj.ground = false; cj.peakY = sy + 2;
   mj.physics(dt);
   const jellyBounceOk = cj.vy > 4 && cj.air === true;
 
@@ -631,6 +635,54 @@ function winStory(n, tries = 4) {
   const t13SimOk = autoDowngradeOk && mobileDemoPausedOk && pcDemoRunsOk;
   if (!t13SimOk) fails++;
   console.log(`${t13SimOk ? 'OK ' : 'MAL'} rendimiento: auto-ahorro tras 5s < 30 fps (${autoDowngradeOk}), demo pausado en anfitrión celular (${mobileDemoPausedOk})`);
+}
+
+// 10) gallinero chistoso: apariencias, armas fuertes, cajas generosas y construcciones de cada isla
+{
+  const C = await import('../game/constants.js');
+  const r = (() => { let x = 7; return () => ((x = (x * 16807) % 2147483647) / 2147483647); })();
+  let looksOk = C.parseLook('casco').head === 'casco' && C.parseLook('gafas').face === 'gafas' && C.validLook('afro|payaso|bigote') && !C.validLook('afro|nada|bigote') && !C.validLook('zorro|ninguna|ninguna') && C.validLook('zorro|ninguna|ninguna', true);
+  for (let i = 0; i < 60; i++) { const l = C.randomLook(r); if (!C.validLook(l)) looksOk = false; }
+  looksOk = looksOk && C.HEADS.length >= 15 && C.FACES.length >= 6 && C.BEARDS.length >= 6 && C.lookName('vaquero|ninguna|bigote').includes('Bigote');
+
+  // armas al estilo Worms 4: la bazuca quita más de 45 a quemarropa y el oro arrasa
+  const mw = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 99, island: 'arenero' });
+  while (mw.phase !== 'play') mw.update(dt);
+  const vic = mw.chickens.find((c) => c.alive && c.team !== mw.activeChicken().team);
+  const hp0 = vic.hp; mw.explode(vic.x, vic.y + 0.5, vic.z, 2.8, 55, mw.activeChicken().team);
+  const strongOk = hp0 - vic.hp >= 45;
+
+  // caja de armas: siempre da al menos 1 arma buena (y a veces 2 o más)
+  let crateOk = true, gotMany = false;
+  for (let i = 0; i < 40; i++) {
+    const ch = mw.activeChicken(); const team = mw.teams[ch.team];
+    const before = JSON.stringify(team.inv);
+    mw.pickCrate(ch, mw.addObj({ kind: 'cajaArma', x: ch.x, y: ch.y, z: ch.z, ground: true }));
+    const inv0 = JSON.parse(before); let gain = 0;
+    for (const k in team.inv) if (team.inv[k] > (inv0[k] || 0) && inv0[k] !== -1) gain += team.inv[k] - Math.max(0, inv0[k] || 0);
+    if (gain < 1) crateOk = false; if (gain >= 2) gotMany = true;
+  }
+  crateOk = crateOk && gotMany && C.CRATE_WEAPONS.some((c) => c[0] === 'vaca') && C.CRATE_WEAPONS.some((c) => c[0] === 'supergallina');
+
+  // construcciones: castillo con murallas altas, tina con agua adentro, mesa de billar elevada, torta de pisos
+  const solidAt = (m, i, j, k) => m.terrain.dens(i, j, k) >= 128;
+  const isl = (id) => new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 5, island: id });
+  const mcas = isl('castillo'), w = mcas.theme.waterVox;
+  const castleOk = solidAt(mcas, 72, w + 18, 72 - 24) && solidAt(mcas, 72 - 24, w + 22, 72 - 24) && !solidAt(mcas, 72, w + 12, 72 + 24) && mcas.terrain.topAt(60, 72 + 31) <= w;
+  const mban = isl('banera');
+  const tubOk = mban.terrain.topAt(72, 72) <= mban.theme.waterVox && mban.terrain.topAt(72, 72 - 23) >= mban.theme.waterVox + 12;
+  const mbil = isl('billar');
+  const tableOk = mbil.terrain.topAt(60, 80) >= mbil.theme.waterVox + 11 && !solidAt(mbil, 60, mbil.theme.waterVox + 4, 80);
+  const mcoc = isl('cocina');
+  const cakeOk = mcoc.terrain.topAt(72, 72) >= mcoc.theme.waterVox + 18;
+  const mjug = isl('juguetes');
+  const trackOk = solidAt(mjug, 72 + 34, mjug.theme.waterVox + 14, 72);
+  const buildOk = castleOk && tubOk && tableOk && cakeOk && trackOk;
+  for (const id of ISLAND_IDS) if (isl(id).terrain.spawnPoints(12, 3).length < 12) { console.log('  pocos puntos de aparición en', id); }
+
+  const t14 = looksOk && strongOk && crateOk && buildOk;
+  if (!t14) fails++;
+  console.log(`${t14 ? 'OK ' : 'MAL'} gallinero chistoso (apariencias ${looksOk}, armas fuertes ${strongOk} ${hp0 - vic.hp}, cajas ${crateOk}, construcciones castillo ${castleOk} tina ${tubOk} billar ${tableOk} torta ${cakeOk} tren ${trackOk})`);
 }
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

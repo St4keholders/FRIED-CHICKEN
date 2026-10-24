@@ -117,7 +117,11 @@ export function WeaponGrid({ inv, current, onPick, onClose, onSurrender }) {
 function hintFor(info) {
   if (!info) return '';
   const w = weaponById(info.weapon);
+  if (info.walker && info.weapon === 'supergallina') return '¡Vuela! Joystick o arrastrar para dirigirla · DISPARAR para estallarla';
   if (info.walker) return 'Toca DISPARAR para hacer explotar a Mamá Gallina';
+  if (info.weapon === 'aji' && !info.retreat) return 'Apúntale y MANTÉN DISPARAR para echar fuego';
+  if (info.weapon === 'metralleta' && !info.retreat) return 'Apunta bien y toca DISPARAR: sale una ráfaga de 14';
+  if (info.weapon === 'vaca' && info.mode === 'target') return 'Marca dónde cae la vaca (rebota hacia donde mira tu pollito) y toca DISPARAR';
   if (info.retreat) return `¡Escóndete! ${info.retreat} s`;
   if (info.rope) return 'Joystick: balancearte y subir/bajar · SALTAR: soltarte';
   if (info.jet) return 'Mantén SALTAR para subir · joystick para moverte';

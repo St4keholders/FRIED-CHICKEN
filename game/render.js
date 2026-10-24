@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { NX, NY, NZ, VOX, WORLD_X, WORLD_Z, CHICKEN_H, PROJ_GRAVITY, weaponById } from './constants.js';
 import { TerrainMesh } from './mesher.js';
-import { makeChicken, makeObject, PROJ_MODEL } from './models.js';
+import { makeChicken, makeObject, PROJ_MODEL, makeHeld, HELD_FOR, HELD_POS } from './models.js';
 
 const tmpV = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -93,8 +93,8 @@ class Particles {
 // ---------------- retratos de pollito (para el lobby) ----------------
 let portraitR = null;
 const portraitCache = new Map();
-export function chickenPortrait(color, acc, robot = false, size = 160) {
-  const key = `${color}|${acc}|${robot}|${size}`;
+export function chickenPortrait(color, acc, robot = false, size = 160, frame = 'body') {
+  const key = `${color}|${acc}|${robot}|${size}|${frame}`;
   if (portraitCache.has(key)) return portraitCache.get(key);
   try {
     if (!portraitR) {
@@ -107,10 +107,11 @@ export function chickenPortrait(color, acc, robot = false, size = 160) {
     const { r, scene, cam } = portraitR;
     r.setSize(size, size, false);
     const mesh = makeChicken(color, acc, robot);
-    mesh.rotation.y = 0.5;
+    mesh.rotation.y = 0.45;
     scene.add(mesh);
-    cam.position.set(0, 0.95, 3.7);
-    cam.lookAt(0, 0.8, 0);
+    const tall = /mago|vikingo|fiesta|chef|mohicano/.test(String(acc));
+    if (frame === 'head') { mesh.rotation.y = 0.3; cam.position.set(0, 1.0, 2.3); cam.lookAt(0, 0.98, 0); }
+    else { cam.position.set(0, tall ? 1.15 : 1.0, tall ? 4.4 : 3.8); cam.lookAt(0, tall ? 0.98 : 0.82, 0); }
     r.render(scene, cam);
     const url = r.domElement.toDataURL('image/png');
     scene.remove(mesh);
@@ -425,6 +426,16 @@ export class Renderer {
       case 'heal': this.floatText(`+${e.n}`, 'fh', e.x, e.y, e.z); break;
       case 'pickup': this.floatText(`${e.icon || ''} ${e.text}`, 'fp', e.x, e.y, e.z); break;
       case 'say': this.say(e.id, e.text); break;
+      case 'gesture': {
+        const c = this.chickens.get(e.id);
+        if (c) {
+          const dur = { yay: 1.6, oops: 1.6, remote: 0.9, throw: 0.6, recoil: 0.55, swing: 0.6, peck: 0.5, drop: 0.7, build: 0.8, flame: 0.3 }[e.g] || 0.6;
+          c.gest = { g: e.g, t: 0, dur, puff: false };
+          if (e.g === 'yay') this.floatText(['✨', '😎', '🎉', '💪'][Math.floor(Math.random() * 4)], 'fr', c.obj.position.x, c.obj.position.y + 2.3, c.obj.position.z);
+          if (e.g === 'oops') this.floatText('😅', 'fr', c.obj.position.x, c.obj.position.y + 2.3, c.obj.position.z);
+        }
+        break;
+      }
       case 'react': {
         const c = this.chickens.get(e.id);
         if (c) this.floatText(e.e, 'fr', c.obj.position.x, c.obj.position.y + 2.2, c.obj.position.z);
@@ -435,6 +446,116 @@ export class Renderer {
         if (c) for (let i = 0; i < 6; i++) P.add({ x: c.obj.position.x, y: c.obj.position.y + 0.05, z: c.obj.position.z, vx: (Math.random() - 0.5) * 2, vy: 0.8, vz: (Math.random() - 0.5) * 2, size: 0.12, color: pal[1], life: 0.5, grav: 4 });
         break;
       }
+      default: break;
+    }
+  }
+
+  // arma gigante en las manos del pollito del turno + gestos chistosos
+  animHeld(c, s, T, v, active, isFp, dt) {
+    const { body, head, wings, eyes } = c.obj.userData;
+    if (head) head.position.z = 0;
+    const wpn = T && s.id === active ? weaponById(T.weapon) : null;
+    const spec = wpn ? HELD_FOR[wpn.id] : null;
+    const g = c.gest;
+    const busy = g && g.t < g.dur;
+    let show = !!(spec && s.alive && !s.rope && (v.phase === 'play' || busy || s.flaming || s.bursting) && !(s.jet && wpn.id !== 'ventilador') && !(isFp && s.id === active));
+    if (!c.held) c.held = {};
+    let h = null;
+    if (spec) {
+      if (!c.held[spec.m]) { c.held[spec.m] = makeHeld(spec); body.add(c.held[spec.m]); }
+      h = c.held[spec.m];
+    }
+    for (const k in c.held) c.held[k].visible = false;
+    const pitch = T && s.id === active ? Math.max(-1.0, Math.min(1.2, T.pitch || 0)) : 0;
+    if (h && show) {
+      const at = HELD_POS[spec.at];
+      h.visible = true;
+      h.position.set(at[0], at[1], at[2]);
+      h.rotation.set(spec.aim ? -pitch : 0, spec.at === 'wing' ? 0.4 : 0, 0);
+      if (spec.at === 'wing' && wings && wings[0]) { wings[0].rotation.set(-0.3, 0, -2.3); wings[0].position.y = 0.62; }
+      if (spec.at === 'front' && wings) { wings[0].rotation.set(-1.2, 0, -0.9); wings[1].rotation.set(-1.2, 0, 0.9); }
+      if ((spec.at === 'hip' || spec.at === 'shoulder') && wings) { wings[0].rotation.set(-1.0 - pitch * 0.5, 0, -0.7); wings[1].rotation.set(-1.3 - pitch * 0.5, 0, 0.5); }
+      if (h.userData.spin) h.userData.spin.rotation.z += dt * (s.bursting ? 40 : s.jet ? 35 : 1);
+    }
+    // fuego del ají y fogonazos de la metralleta
+    if (h && show && (s.flaming || s.bursting)) {
+      const mz = h.userData.muzzle || [0, 0, 1];
+      const mp = h.localToWorld(new THREE.Vector3(mz[0], mz[1], mz[2]));
+      const cp = Math.cos(Math.min(0.4, pitch));
+      const dx = Math.sin(s.yaw) * cp, dy = Math.sin(Math.min(0.4, pitch)), dz = Math.cos(s.yaw) * cp;
+      if (s.flaming) {
+        body.position.x += (Math.random() - 0.5) * 0.05;
+        for (let i = 0; i < 4; i++) {
+          const sp = 7 + Math.random() * 4;
+          this.parts.add({ x: mp.x, y: mp.y, z: mp.z, vx: dx * sp + (Math.random() - 0.5) * 1.6, vy: dy * sp + Math.random() * 1.2, vz: dz * sp + (Math.random() - 0.5) * 1.6, size: 0.14 + Math.random() * 0.12, color: ['#ffd23f', '#ff8a1f', '#ff3b1f', '#fff1a0'][Math.floor(Math.random() * 4)], life: 0.45, grav: -2, grow: 2.2 });
+        }
+      } else if (Math.random() < 0.7) {
+        this.parts.add({ x: mp.x, y: mp.y, z: mp.z, vx: dx * 2, vy: 0.5, vz: dz * 2, size: 0.22, color: '#fff1a0', life: 0.08, grav: 0, shrink: true });
+        this.parts.add({ x: mp.x, y: mp.y - 0.1, z: mp.z, vx: (Math.random() - 0.5) * 2, vy: 2, vz: (Math.random() - 0.5) * 2, size: 0.06, color: '#ffd23f', life: 0.6, grav: 12 });
+        body.position.z -= 0.04;
+      }
+    }
+    if (!g) return;
+    g.t += dt;
+    if (g.t >= g.dur) { c.gest = null; return; }
+    const e = g.t / g.dur;
+    const bump = Math.sin(Math.min(1, e * 3) * Math.PI) * (1 - e);
+    switch (g.g) {
+      case 'recoil': {
+        body.position.z -= 0.32 * bump;
+        body.scale.y *= 1 - 0.18 * bump;
+        if (h) h.rotation.x -= 0.7 * bump;
+        if (eyes) for (const ey of eyes) ey.scale.y *= 1 - 0.75 * bump;
+        if (!g.puff && h && h.visible) {
+          g.puff = true;
+          const mz = h.userData.muzzle || [0, 0, 1];
+          const mp = h.localToWorld(new THREE.Vector3(mz[0], mz[1], mz[2]));
+          for (let i = 0; i < 10; i++) this.parts.add({ x: mp.x, y: mp.y, z: mp.z, vx: (Math.random() - 0.5) * 2, vy: Math.random() * 1.5, vz: (Math.random() - 0.5) * 2, size: 0.18, color: i < 3 ? '#fff1a0' : '#d8d2c8', life: 0.6, grav: -1, grow: 1.5, drag: 2 });
+        }
+        break;
+      }
+      case 'throw':
+        if (wings && wings[0]) { wings[0].rotation.set(-1.8 * e, 0, -2.3 + 1.4 * e); }
+        body.rotation.x += 0.35 * Math.sin(e * Math.PI);
+        if (h && e > 0.25) h.visible = false;
+        break;
+      case 'swing':
+        body.rotation.y = e * Math.PI * 2;
+        if (wings) { wings[0].rotation.set(0, 0, -1.6); }
+        break;
+      case 'peck':
+        if (head) head.position.z = 0.28 * Math.sin(e * Math.PI);
+        if (e < 0.6 && head) {
+          const bp = head.localToWorld(new THREE.Vector3(0, 0.93, 0.6));
+          for (let i = 0; i < 2; i++) this.parts.add({ x: bp.x, y: bp.y, z: bp.z, vx: (Math.random() - 0.5) * 1.5, vy: 1.5 + Math.random(), vz: (Math.random() - 0.5) * 1.5, size: 0.12, color: Math.random() < 0.5 ? '#ffd23f' : '#ff5a1f', life: 0.35, grav: -2, shrink: true });
+        }
+        break;
+      case 'drop':
+        body.rotation.x += 0.6 * Math.sin(e * Math.PI);
+        if (h && e > 0.45) h.visible = false;
+        break;
+      case 'remote':
+        body.position.y += Math.abs(Math.sin(e * Math.PI * 3)) * 0.08;
+        if (eyes) for (const ey of eyes) ey.scale.multiplyScalar(1.15);
+        break;
+      case 'build':
+        if (wings && wings[0]) wings[0].rotation.set(-1.6 * Math.abs(Math.sin(e * Math.PI * 3)), 0, -1.2);
+        break;
+      case 'yay': {
+        body.position.y += Math.abs(Math.sin(e * Math.PI * 3)) * 0.35;
+        body.rotation.y = e * Math.PI * 2;
+        const wave = Math.sin(g.t * 18) * 0.3;
+        if (wings) { wings[0].rotation.set(0, 0, -(2.3 + wave)); wings[1].rotation.set(0, 0, 2.3 + wave); }
+        if (eyes) for (const ey of eyes) ey.scale.y = 0.04;
+        if (h) h.visible = false;
+        break;
+      }
+      case 'oops':
+        if (head) head.rotation.x = 0.45;
+        if (wings && wings[1]) { wings[1].rotation.set(-1.0, 0.4, 2.5); wings[1].position.y = 0.75; }
+        if (eyes) for (const ey of eyes) ey.scale.y *= 0.4;
+        body.rotation.z += Math.sin(g.t * 9) * 0.06;
+        break;
       default: break;
     }
   }
@@ -596,10 +717,8 @@ export class Renderer {
       }
 
       c.umb.visible = !!s.umbrella;
-      // arma en la mano del pollito activo
-      const wpn = T && s.id === active ? weaponById(T.weapon) : null;
-      gun.visible = !!(wpn && (wpn.aim === 'power' || wpn.id === 'escopeta' || wpn.id === 'cuerda') && v.phase === 'play' && !s.rope && !s.jet);
-      if (gun.visible) gun.rotation.x = -(T.pitch || 0);
+      gun.visible = false;
+      this.animHeld(c, s, T, v, active, isFp, dt);
       // sombra
       const gy = this.groundBelow(s.x, s.y + 0.2, s.z);
       sh.position.set(s.x, gy + 0.03, s.z);
@@ -644,7 +763,7 @@ export class Renderer {
       let it = this.objs.get(o.id);
       if (!it) {
         const kind = PROJ_MODEL[o.kind] || 'egg';
-        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, cajaHuevo: 1.25, maquinaLata: 1.35, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2, fuego: 1.8 }[o.kind] || 1;
+        const scale = { cajaArma: 1.2, cajaSalud: 1.2, cajaUtil: 1.2, cajaHuevo: 1.25, maquinaLata: 1.35, barril: 1.1, mina: 1.25, paloma: 1.3, oro: 1.1, gallina: 0.9, guacamaya: 1.2, fuego: 1.8, vaca: 1.7, supergallina: 1.2, platano: 1.2 }[o.kind] || 1;
         const mesh = makeObject(kind, scale);
         this.scene.add(mesh);
         it = { mesh, kind: o.kind };
@@ -661,10 +780,10 @@ export class Renderer {
       }
       const m = it.mesh;
       m.position.set(o.x, o.y, o.z);
-      if (['bazuca', 'regalo', 'guacamaya', 'paloma'].includes(o.kind)) {
+      if (['bazuca', 'regalo', 'guacamaya', 'paloma', 'supergallina'].includes(o.kind)) {
         m.rotation.set(0, o.yaw, 0);
         if (o.kind === 'bazuca') m.rotation.x = Math.PI / 2;
-      } else if (['granada', 'maiz', 'oro', 'pop'].includes(o.kind)) {
+      } else if (['granada', 'maiz', 'oro', 'pop', 'platano', 'platanito'].includes(o.kind)) {
         m.rotation.x += dt * 8; m.rotation.z += dt * 5;
       } else if (o.kind === 'bolaBillar') {
         const dx = o.x - (it.lx ?? o.x), dz = o.z - (it.lz ?? o.z);
@@ -701,6 +820,12 @@ export class Renderer {
       }
       if (o.kind === 'mina') m.visible = !o.trig || Math.sin(this.time * 30) > -0.3;
       if (o.kind === 'vela' && Math.random() < 0.5) this.parts.add({ x: o.x, y: o.y + 0.9, z: o.z, vx: (Math.random() - 0.5) * 0.4, vy: 1.2, vz: (Math.random() - 0.5) * 0.4, size: 0.1, color: Math.random() < 0.5 ? '#ffd23f' : '#ff7a1a', life: 0.4, grav: 0, shrink: true });
+      if (o.kind === 'supergallina') {
+        const cape = m.getObjectByName('cape');
+        if (cape) cape.rotation.x = 0.25 + Math.sin(this.time * 22) * 0.35;
+        if (Math.random() < 0.6) this.parts.add({ x: o.x, y: o.y + 0.3, z: o.z, vx: 0, vy: 0.2, vz: 0, size: 0.12, color: Math.random() < 0.5 ? '#ff4757' : '#ffd23f', life: 0.5, grav: 0, shrink: true });
+      }
+      if (o.kind === 'vaca') m.rotation.z = Math.sin(this.time * 7) * 0.4;
       if (['bazuca', 'guacamaya'].includes(o.kind) && Math.random() < 0.7) this.parts.add({ x: o.x, y: o.y, z: o.z, vx: 0, vy: 0.4, vz: 0, size: 0.22, color: '#d8d8d8', life: 0.6, grav: -0.5, grow: 1.5, drag: 1 });
       if (o.kind === 'oro' && Math.random() < 0.6) this.parts.add({ x: o.x, y: o.y + 0.2, z: o.z, vx: (Math.random() - 0.5), vy: 1, vz: (Math.random() - 0.5), size: 0.1, color: '#fff3a0', life: 0.5, grav: 0, shrink: true });
       if (it.lbl) {

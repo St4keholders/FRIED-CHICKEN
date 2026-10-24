@@ -125,13 +125,18 @@ export class CpuBrain {
       if (d > 26) continue;
       const dir = { x: dx / d, y: dy / d, z: dz / d };
       const hit = m.ray(me.x, me.y + 0.75, me.z, dir, d - 0.4);
-      if (!hit) consider({ kind: 'direct', w: 'escopeta', yaw: Math.atan2(dx, dz), pitch: Math.asin(dir.y), score: Math.min(50 * mult, e.hp + 30) * 0.9 });
+      if (!hit) {
+        consider({ kind: 'direct', w: 'escopeta', yaw: Math.atan2(dx, dz), pitch: Math.asin(dir.y), score: Math.min(55 * mult, e.hp + 30) * 0.9 });
+        if (has('metralleta') && d < 18) consider({ kind: 'direct', w: 'metralleta', yaw: Math.atan2(dx, dz), pitch: Math.asin(dir.y), score: Math.min(80 * mult, e.hp + 40) * 0.85 });
+        if (has('aji') && d < 3.8) consider({ kind: 'hold', w: 'aji', yaw: Math.atan2(dx, dz), pitch: 0, score: 60 * mult + (e.y < m.water + 3 ? 20 : 0) });
+      }
     }
     yield;
     // tiros con parábola
     const weapons = ['bazuca', 'granada'];
     if (has('maiz') && this.level >= 1) weapons.push('maiz');
     if (has('oro') && this.level >= 1) weapons.push('oro');
+    if (has('platano') && this.level >= 1) weapons.push('platano');
     let count = 0;
     for (const w of weapons) {
       const b = BOOM[w];
@@ -148,6 +153,7 @@ export class CpuBrain {
                 let s = this.scoreAt(hit.x, hit.y, hit.z, b, mult);
                 if (w === 'oro') s -= 25; // guardar el huevo de oro para algo bueno
                 if (w === 'maiz') s = s * 1.1 - 10;
+                if (w === 'platano') s = s * 1.7 - 15;
                 consider({ kind: 'power', w, yaw: base + dyaw, pitch, power, fuse, score: s });
               }
               if (++count % 60 === 0) yield;
@@ -162,6 +168,7 @@ export class CpuBrain {
         const tx = e.shield ? e.x - Math.sin(e.yaw) * 1.6 : e.x;
         const tz = e.shield ? e.z - Math.cos(e.yaw) * 1.6 : e.z;
         if (has('palomas')) consider({ kind: 'target', w: 'palomas', x: tx, z: tz, score: this.scoreAt(tx, e.y + 0.5, tz, BOOM.regalo, mult) * 1.8 - 10 });
+        if (has('vaca')) consider({ kind: 'target', w: 'vaca', x: tx, z: tz, score: this.scoreAt(tx, e.y + 0.5, tz, BOOM.vaca, mult) * 2.2 - 15 });
         if (has('guacamaya')) consider({ kind: 'target', w: 'guacamaya', x: tx, z: tz, score: this.scoreAt(tx, e.y + 0.4, tz, BOOM.guacamaya, mult) * 1.2 - 8 });
       }
     }
@@ -210,7 +217,12 @@ export class CpuBrain {
       const step = this.gen && this.gen.next();
       if ((!step || step.done) && this.t > 1.2) {
         const b = this.best || { kind: 'skip', score: 0 };
-        if (b.score < 8 && this.walked < 2 && this.enemies().length) {
+        const crate = this.m.objs.filter((o) => !o.dead && o.ground && (o.kind === 'cajaArma' || o.kind === 'cajaSalud') && Math.hypot(o.x - me.x, o.z - me.z) < 11 && Math.abs(o.y - me.y) < 3)
+          .sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z))[0];
+        if (crate && b.score < 40 && this.walked < 3) {
+          this.state = 'walk'; this.t = 0; this.walked++;
+          this.walkYaw = Math.atan2(crate.x - me.x, crate.z - me.z);
+        } else if (b.score < 8 && this.walked < 2 && this.enemies().length) {
           this.state = 'walk'; this.t = 0; this.walked++;
           const e2 = this.enemies().sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z))[0];
           const ang = Math.atan2(e2.x - me.x, e2.z - me.z);
@@ -239,7 +251,7 @@ export class CpuBrain {
       if (p.kind === 'skip') { m.act({ t: 'weapon', w: 'saltar' }); this.state = 'fire'; this.t = 0; m.control(inp); return; }
       m.act({ t: 'weapon', w: p.w });
       if (p.fuse) m.act({ t: 'fuse', v: p.fuse });
-      if (p.kind === 'power' || p.kind === 'direct') m.act({ t: 'aim' });
+      if (p.kind === 'power' || p.kind === 'direct' || p.kind === 'hold') m.act({ t: 'aim' });
       if (p.kind === 'target') T.cursor = { x: p.x, z: p.z };
       this.state = 'aim'; this.t = 0;
       m.control(inp);
@@ -264,6 +276,9 @@ export class CpuBrain {
       if (p.kind === 'power') {
         inp.fire = T.power < p.power - 0.005 && this.t < 3;
         if (!inp.fire && this.t > 0.05) this.state = 'done';
+      } else if (p.kind === 'hold') {
+        inp.fire = this.t < 2.9;
+        if (!inp.fire) this.state = 'done';
       } else {
         inp.fire = this.t < 0.1;
         if (p.kind === 'direct' && this.t > 0.8 && T.shots < 2 && m.phase === 'play') { this.t = 0; inp.fire = true; }

@@ -1,7 +1,7 @@
 // Simulación autoritativa de una partida: turnos, física de pollitos, armas, objetos y victoria.
 // Corre solo en el anfitrión; los celulares reciben fotos (snapshots) y cambios del terreno.
 import { Terrain, rng, M } from './terrain.js';
-import { VOX, NX, NZ, WORLD_X, WORLD_Z, GRAVITY, PROJ_GRAVITY, CHICKEN_R, CHICKEN_H, RETREAT_TIME, WEAPONS, weaponById, startAmmo, canFpWeapon } from './constants.js';
+import { VOX, NX, NZ, WORLD_X, WORLD_Z, GRAVITY, PROJ_GRAVITY, CHICKEN_R, CHICKEN_H, RETREAT_TIME, WEAPONS, weaponById, startAmmo, canFpWeapon, CRATE_WEAPONS } from './constants.js';
 import { quote } from './voices.js';
 
 const R = CHICKEN_R, H = CHICKEN_H;
@@ -9,15 +9,24 @@ const WALK = 2.6, TURN = 2.6, AIM_TURN = 0.65, PITCH_SPEED = 0.5;
 const MAX_POWER_TIME = 1.5;
 
 // parámetros de las explosiones de cada arma
+// (más fuertes, al estilo Worms 4: cráteres grandes y empujones que mandan al agua)
 const BOOM = {
-  bazuca: { r: 2.1, d: 50 }, granada: { r: 2.1, d: 50 }, maiz: { r: 1.6, d: 25 }, pop: { r: 1.3, d: 18 },
-  oro: { r: 4.4, d: 100 }, regalo: { r: 1.7, d: 30 }, guacamaya: { r: 2.2, d: 55 }, vela: { r: 2.6, d: 70 },
-  mina: { r: 2.0, d: 45 }, gallina: { r: 3.0, d: 75 }, barril: { r: 2.6, d: 45 },
-  cajaArma: { r: 2.0, d: 30 }, cajaSalud: { r: 2.0, d: 30 }, cajaUtil: { r: 2.0, d: 30 },
-  escopeta: { r: 0.9, d: 25 }, muerte: { r: 1.3, d: 15 }, maquinaLata: { r: 2.5, d: 35 },
+  bazuca: { r: 2.8, d: 55 }, granada: { r: 2.8, d: 55 }, maiz: { r: 2.0, d: 30 }, pop: { r: 1.7, d: 22 },
+  oro: { r: 6.0, d: 120 }, regalo: { r: 2.3, d: 35 }, guacamaya: { r: 2.9, d: 60 }, vela: { r: 3.4, d: 80 },
+  mina: { r: 2.6, d: 50 }, gallina: { r: 3.8, d: 85 }, barril: { r: 3.2, d: 50 },
+  cajaArma: { r: 2.4, d: 35 }, cajaSalud: { r: 2.4, d: 35 }, cajaUtil: { r: 2.4, d: 35 },
+  escopeta: { r: 1.2, d: 30 }, muerte: { r: 1.6, d: 18 }, maquinaLata: { r: 2.5, d: 35 },
+  platano: { r: 2.6, d: 45 }, platanito: { r: 2.4, d: 40 }, supergallina: { r: 3.4, d: 75 }, vaca: { r: 2.6, d: 42 },
+  metralleta: { r: 0.6, d: 7 },
 };
 const WIND_K = { bazuca: 7, regalo: 7, pop: 2 };
-const BOUNCE = { granada: 0.45, maiz: 0.45, pop: 0.4, oro: 0.25 };
+const BOUNCE = { granada: 0.45, maiz: 0.45, pop: 0.4, oro: 0.25, platano: 0.5, platanito: 0.55 };
+// gesto chistoso de cada arma al usarla
+const GESTURE = {
+  bazuca: 'recoil', escopeta: 'recoil', metralleta: 'recoil', granada: 'throw', maiz: 'throw', oro: 'throw', platano: 'throw',
+  chancla: 'swing', picotazo: 'peck', vela: 'drop', mina: 'drop', gallina: 'drop', supergallina: 'drop',
+  palomas: 'remote', guacamaya: 'remote', vaca: 'remote', teleport: 'remote', viga: 'build', aji: 'flame',
+};
 
 let uid = 1;
 
@@ -42,7 +51,7 @@ export class Match {
     this.r = rng(seed ^ 0xabcdef);
     this.stats = {};
     this.story = story ? { level: story, round: 0, eggs: 0, waves: 0, hintDone: false } : null;
-    this.teams = teams.map((t, i) => ({ ...t, idx: i, next: 0, turns: 0, inv: startAmmo(cfg.weaponSet), dd: false, visor: false }));
+    this.teams = teams.map((t, i) => ({ ...t, idx: i, next: 0, turns: 0, inv: startAmmo(story ? 'historia' : cfg.weaponSet), dd: false, visor: false }));
     if (story && story.ammo) {
       // munición limitada para los pollitos de los jugadores
       for (const t of this.teams) if (t.alliance === 'H' && !t.npc) for (const [k, v] of Object.entries(story.ammo)) t.inv[k] = v;
@@ -210,15 +219,17 @@ export class Match {
     this.emit({ k: 'turn', team: ti, ch: ch.id, slot });
     this.emit({ k: 'sfx', s: 'turn' });
     this.say(ch, 'turn');
-    // caja del cielo de vez en cuando
-    if (this.r() < 0.35) this.dropCrate();
+    // cajas del cielo seguido (lo bueno sale de ahí)
+    const crateChance = this.cfg.weaponSet === 'locura' ? 0.35 : 0.6;
+    if (this.r() < crateChance) this.dropCrate();
+    if (this.r() < crateChance * 0.35) this.dropCrate();
   }
 
   dropCrate() {
     const sp = this.terrain.spawnPoints(1, Math.floor(this.r() * 1e9))[0];
     if (!sp) return;
     const roll = this.r();
-    const kind = roll < 0.4 ? 'cajaSalud' : roll < 0.8 ? 'cajaArma' : 'cajaUtil';
+    const kind = roll < 0.25 ? 'cajaSalud' : roll < 0.85 ? 'cajaArma' : 'cajaUtil';
     const trap = this.r() < 0.1;
     this.addObj({ kind, x: sp.x, y: 23, z: sp.z, para: true, trap });
     this.emit({ k: 'sfx', s: 'crate' });
@@ -227,7 +238,8 @@ export class Match {
   endTurn(why) {
     if (!this.turn || this.phase === 'settle' || this.phase === 'between' || this.phase === 'over') return;
     const ch = this.activeChicken();
-    if (ch) { ch.rope = null; ch.jet = 0; }
+    if (ch) { ch.rope = null; ch.jet = 0; ch.flaming = false; ch.bursting = false; }
+    this.turn.flame = 0; this.turn.burst = 0;
     this.turn.charging = false;
     this.turn.mode = 'walk';
     this.turn.fp = false;
@@ -259,6 +271,10 @@ export class Match {
     const dp = Number(dpitch) || 0;
     if (!dy && !dp) return;
     T.aimed = true;
+    if (T.walker) {
+      const g = this.objs.find((o) => o.id === T.walker && !o.dead);
+      if (g && g.kind === 'supergallina') { g.yaw -= dy * 1.2; g.pitch = Math.max(-1, Math.min(1, g.pitch + dp * 1.2)); return; }
+    }
     if (T.mode === 'target' && T.cursor) {
       const fx = Math.sin(ch.yaw), fz = Math.cos(ch.yaw);
       const step = 12;
@@ -358,11 +374,57 @@ export class Match {
     const ox = ch.x + dir.x * 0.6, oy = ch.y + 0.75 + dir.y * 0.6, oz = ch.z + dir.z * 0.6;
     const use = () => { if (team.inv[w.id] > 0) team.inv[w.id]--; };
     const dd = team.dd ? 2 : 1;
+    if (GESTURE[w.id] && !(T.walker && (w.id === 'gallina' || w.id === 'supergallina'))) this.emit({ k: 'gesture', id: ch.id, g: GESTURE[w.id] });
     switch (w.id) {
-      case 'bazuca': case 'granada': case 'maiz': case 'oro': {
+      case 'supergallina': {
+        if (T.walker) {
+          const g = this.objs.find((o) => o.id === T.walker);
+          if (g) this.explodeObj(g);
+          T.walker = null;
+          this.startRetreat();
+          break;
+        }
+        use(); team.dd = false;
+        const g = this.addObj({ kind: 'supergallina', x: ch.x + Math.sin(ch.yaw) * 0.9, y: ch.y + 1.1, z: ch.z + Math.cos(ch.yaw) * 0.9, yaw: ch.yaw, pitch: Math.max(-0.3, Math.min(0.6, T.pitch)), owner: T.team, src: ch.id, t: 9, dd, speed: 8.5 });
+        T.walker = g.id;
+        T.mode = 'walk';
+        this.emit({ k: 'sfx', s: 'gallina' });
+        this.say(ch, 'fire', '¡Súper Gallina, al ataque!');
+        break;
+      }
+      case 'vaca': {
+        if (!T.cursor) break;
+        use(); team.dd = false;
+        const yaw = ch.yaw;
+        const v = this.addObj({ kind: 'vaca', x: T.cursor.x, y: 24, z: T.cursor.z, vx: Math.sin(yaw) * 1.2, vy: -2, vz: Math.cos(yaw) * 1.2, dir: yaw, owner: T.team, dd, bounces: 0 });
+        T.track = v.id; T.mode = 'walk';
+        this.emit({ k: 'sfx', s: 'vaca' });
+        this.say(ch, 'fire', '¡Cuidado abajo, MUUU!');
+        this.startRetreat();
+        break;
+      }
+      case 'aji': {
+        if (T.flame > 0) break;
+        use();
+        T.flame = 2.8; T.flameTick = 0; T.flameFire = 0;
+        ch.flaming = true;
+        this.emit({ k: 'sfx', s: 'flame' });
+        this.say(ch, 'fire', '¡Picante, picante!');
+        break;
+      }
+      case 'metralleta': {
+        if (T.burst > 0) break;
+        use();
+        T.burst = 14; T.burstT = 0;
+        ch.bursting = true;
+        this.say(ch, 'fire', '¡Ratatatá!');
+        break;
+      }
+      case 'bazuca': case 'granada': case 'maiz': case 'oro': case 'platano': {
         const sp = 5 + power * 21;
         const p = this.addObj({ kind: w.id, x: ox, y: oy, z: oz, vx: dir.x * sp, vy: dir.y * sp, vz: dir.z * sp, owner: T.team, src: ch.id, fuse: w.fuse ? T.fuse : 3, dd, proj: true });
         if (w.id === 'oro') { p.fuse = 3; this.emit({ k: 'sfx', s: 'aleluya' }); }
+        if (w.id === 'platano') this.emit({ k: 'sfx', s: 'platano' });
         T.track = p.id;
         use(); team.dd = false; team.visor = false;
         this.emit({ k: 'sfx', s: w.id === 'bazuca' ? 'shoot' : 'throw' });
@@ -507,7 +569,7 @@ export class Match {
     return null;
   }
 
-  hitscan(ch, dir, team, dd) {
+  hitscan(ch, dir, team, dd, b = BOOM.escopeta, kick = 7, sfx = 'shotgun') {
     const ox = ch.x, oy = ch.y + 0.75, oz = ch.z;
     let end = null;
     for (let s = 0.5; s < 40; s += 0.1) {
@@ -516,8 +578,8 @@ export class Match {
       if (hitCh || this.terrain.solid(px, py, pz) || py < this.water) { end = { x: px, y: py, z: pz }; break; }
     }
     this.emit({ k: 'tracer', a: [ox, oy, oz], b: end ? [end.x, end.y, end.z] : [ox + dir.x * 40, oy + dir.y * 40, oz + dir.z * 40] });
-    this.emit({ k: 'sfx', s: 'shotgun' });
-    if (end && end.y > this.water) this.explode(end.x, end.y, end.z, BOOM.escopeta.r, BOOM.escopeta.d * dd, team, { push: dir, kick: 7 });
+    this.emit({ k: 'sfx', s: sfx });
+    if (end && end.y > this.water) this.explode(end.x, end.y, end.z, b.r, b.d * dd, team, { push: dir, kick, small: b.r < 1 });
   }
 
   melee(ch, kind, team, dd) {
@@ -581,6 +643,14 @@ export class Match {
     if (amount <= 0) return;
     c.hp = Math.max(0, c.hp - amount);
     c.hurtT = 0.6;
+    const T0 = this.turn;
+    if (T0 && team === T0.team && !opts.silent) {
+      const shooter = this.chickens[T0.ch];
+      if (shooter && shooter.alive && shooter !== c) {
+        if (this.alliance(c.team) !== this.alliance(team) && !T0.cheered) { T0.cheered = true; this.emit({ k: 'gesture', id: shooter.id, g: 'yay' }); }
+        else if (this.alliance(c.team) === this.alliance(team) && !T0.oops) { T0.oops = true; this.emit({ k: 'gesture', id: shooter.id, g: 'oops' }); }
+      }
+    }
     const sc = c.scale || 1;
     this.emit({ k: 'dmg', id: c.id, n: amount, x: c.x, y: c.y + H * sc + 0.4, z: c.z });
     if (team !== undefined && team !== null && this.stats[this.teams[team].id]) {
@@ -632,7 +702,7 @@ export class Match {
       const f = 1 - d / RR;
       const amount = dmg * (0.35 + 0.65 * f);
       const n = d > 0.01 ? 1 / d : 0;
-      const kick = (opts.kick || 5 + dmg * 0.11) * f;
+      const kick = (opts.kick || 6.5 + dmg * 0.15) * f;
       let kx = dx * n, kz = dz * n;
       if (opts.push) { kx += opts.push.x * 0.8; kz += opts.push.z * 0.8; }
       this.knock(c, kx * kick, (0.55 + Math.max(0, dy * n)) * kick, kz * kick);
@@ -675,6 +745,14 @@ export class Match {
         this.addObj({ kind: 'pop', x: o.x, y: o.y + 0.6, z: o.z, vx: Math.cos(a) * 4.5, vy: 7 + this.r() * 3, vz: Math.sin(a) * 4.5, owner: o.owner, proj: true, fuse: 1.2 + this.r() * 0.6, dd: o.dd });
       }
     }
+    if (o.kind === 'platano') {
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + this.r();
+        this.addObj({ kind: 'platanito', x: o.x, y: o.y + 0.7, z: o.z, vx: Math.cos(a) * (4 + this.r() * 3), vy: 8 + this.r() * 4, vz: Math.sin(a) * (4 + this.r() * 3), owner: o.owner, proj: true, fuse: 1.6 + this.r() * 0.9, dd: o.dd, yaw: a });
+      }
+      this.emit({ k: 'sfx', s: 'platano' });
+    }
+    if (o.kind === 'supergallina') this.emit({ k: 'feathers', x: o.x, y: o.y + 0.5, z: o.z, color: '#ff4757' });
     if (o.kind === 'barril') {
       const fy = Math.max(this.water + 0.05, this.terrain.surfaceY(o.x, o.z, o.y + 2));
       if (fy > this.water) this.addObj({ kind: 'fuego', x: o.x, y: fy, z: o.z, owner: o.owner, t: 5.0, r: 2.0 });
@@ -721,7 +799,7 @@ export class Match {
     this.physics(dt);
     if (this.phase === 'settle') {
       this.phaseT += dt;
-      const busy = this.objs.some((o) => !o.dead && (o.proj || o.kind === 'gallina' || o.fuseBoom || (o.kind === 'vela') || (o.kind === 'mina' && o.trig)))
+      const busy = this.objs.some((o) => !o.dead && (o.proj || o.kind === 'gallina' || o.kind === 'vaca' || o.kind === 'supergallina' || o.fuseBoom || (o.kind === 'vela') || (o.kind === 'mina' && o.trig)))
         || this.chickens.some((c) => c.alive && (c.air || c.dying > 0 || c.rope));
       if ((!busy && this.phaseT > 1.0) || this.phaseT > 12) this.afterSettle();
     }
@@ -866,6 +944,44 @@ export class Match {
     const firePress = inp.fire && !T.prevFire, fireRelease = !inp.fire && T.prevFire;
     T.prevFire = !!inp.fire;
 
+    // Súper Gallina: el joystick (o arrastrar) la maneja y DISPARAR la hace estallar
+    if (T.walker) {
+      const g = this.objs.find((o) => o.id === T.walker && !o.dead);
+      if (g && g.kind === 'supergallina') {
+        g.yaw -= mx * 2.0 * dt;
+        g.pitch = Math.max(-1.0, Math.min(1.0, g.pitch + my * 1.5 * dt));
+        if (firePress) this.fire(1);
+        return;
+      }
+    }
+    // Ají Lanzallamas: mientras se mantenga DISPARAR
+    if (T.flame > 0) {
+      if (!inp.fire && T.flameTick > 0.25) T.flame = 0;
+      else {
+        T.flame -= dt;
+        T.flameTick += dt;
+        T.flameFire += dt;
+        ch.yaw -= mx * TURN * 0.5 * dt;
+        if (Math.floor(T.flameTick / 0.1) !== Math.floor((T.flameTick - dt) / 0.1)) this.flameTick(ch, T);
+      }
+      if (T.flame <= 0) { T.flame = 0; ch.flaming = false; this.teams[T.team].dd = false; this.startRetreat(); }
+      return;
+    }
+    // Metralleta de Maíz: ráfaga
+    if (T.burst > 0) {
+      T.burstT -= dt;
+      if (T.burstT <= 0) {
+        T.burstT = 0.085;
+        T.burst--;
+        const spread = 0.07;
+        const yaw = ch.yaw + (this.r() - 0.5) * spread * 2, pitch = T.pitch + (this.r() - 0.5) * spread;
+        const cp = Math.cos(pitch);
+        this.hitscan(ch, { x: Math.sin(yaw) * cp, y: Math.sin(pitch), z: Math.cos(yaw) * cp }, T.team, this.teams[T.team].dd ? 2 : 1, BOOM.metralleta, 3.2, 'mg');
+        if (T.burst <= 0) { ch.bursting = false; this.teams[T.team].dd = false; this.startRetreat(); }
+      }
+      return;
+    }
+
     if (T.mode === 'target') {
       // mover la mira sobre el mapa (CPU o teclado con curva suave)
       if (T.cpu) {
@@ -920,6 +1036,29 @@ export class Match {
         const sp = (my > 0 ? WALK : WALK * 0.6) * my * slow;
         this.walkStep(ch, Math.sin(ch.yaw) * sp * dt, Math.cos(ch.yaw) * sp * dt);
         ch.walk += dt * slow; ch.movingT = 0.15;
+      }
+    }
+  }
+
+  // un "tic" del lanzallamas: quema lo que hay adelante y deja fuego en el piso
+  flameTick(ch, T) {
+    const dir = this.aimDir(ch, Math.min(0.4, T.pitch));
+    const ox = ch.x, oy = ch.y + 0.7, oz = ch.z;
+    for (const c of this.chickens) {
+      if (!c.alive || c === ch) continue;
+      const dx = c.x - ox, dy = c.y + 0.6 - oy, dz = c.z - oz;
+      const d = Math.hypot(dx, dy, dz);
+      if (d > 4.6 || d < 0.01) continue;
+      if ((dx * dir.x + dy * dir.y + dz * dir.z) / d < 0.86) continue;
+      this.knock(c, dir.x * 0.5, 0.45, dir.z * 0.5);
+      this.damage(c, 3 * (this.teams[T.team].dd ? 2 : 1), T.team, { silent: Math.random() < 0.85 });
+    }
+    if (T.flameFire > 0.45) {
+      T.flameFire = 0;
+      const hit = this.ray(ox, oy, oz, { x: dir.x, y: dir.y - 0.35, z: dir.z }, 4.8);
+      if (hit) {
+        const fy = this.terrain.surfaceY(hit.x, hit.z, hit.y + 1);
+        if (fy > this.water && this.objs.filter((o) => o.kind === 'fuego').length < 10) this.addObj({ kind: 'fuego', x: hit.x, y: fy, z: hit.z, owner: T.team, t: 4, r: 1.2 });
       }
     }
   }
@@ -1044,6 +1183,8 @@ export class Match {
       }
       if (o.proj) this.stepProj(o, dt);
       else if (o.kind === 'gallina') this.stepGallina(o, dt);
+      else if (o.kind === 'vaca') this.stepVaca(o, dt);
+      else if (o.kind === 'supergallina') this.stepSuperGallina(o, dt);
       else this.stepStatic(o, dt);
     }
     if (this.objs.length > 60 || this.objs.some((o) => o.dead)) this.objs = this.objs.filter((o) => !o.dead);
@@ -1249,14 +1390,20 @@ export class Match {
     o.dead = true;
     const team = this.teams[ch.team];
     if (o.kind === 'cajaSalud') {
-      ch.hp += 25;
-      this.emit({ k: 'heal', id: ch.id, n: 25, x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      ch.hp += 35;
+      this.emit({ k: 'heal', id: ch.id, n: 35, x: ch.x, y: ch.y + H + 0.4, z: ch.z });
       this.emit({ k: 'sfx', s: 'heal' });
     } else if (o.kind === 'cajaArma') {
-      const pool = WEAPONS.filter((w) => w.ammo > 0 && !['rendirse'].includes(w.id));
-      const w = pool[Math.floor(this.r() * pool.length)];
-      team.inv[w.id] = Math.max(0, team.inv[w.id]) + 1;
-      this.emit({ k: 'pickup', id: ch.id, text: `+1 ${w.name}`, icon: w.icon, x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      const total = CRATE_WEAPONS.reduce((a, c) => a + c[1], 0);
+      let roll = this.r() * total, pick = CRATE_WEAPONS[0];
+      for (const c of CRATE_WEAPONS) { roll -= c[1]; if (roll <= 0) { pick = c; break; } }
+      const [id, , lo, hi] = pick;
+      const n = lo + Math.floor(this.r() * (hi - lo + 1));
+      const w = weaponById(id);
+      if (team.inv[w.id] >= 0) team.inv[w.id] = Math.max(0, team.inv[w.id]) + n;
+      this.emit({ k: 'pickup', id: ch.id, text: `+${n} ${w.name}`, icon: w.icon, x: ch.x, y: ch.y + H + 0.4, z: ch.z });
+      this.emit({ k: 'banner', text: `${w.icon} ¡${w.name}!`, sub: `${team.name} se lleva ${n}`, color: team.color });
+      this.emit({ k: 'gesture', id: ch.id, g: 'yay' });
       this.emit({ k: 'sfx', s: 'pickup' });
     } else {
       const roll = o.util || (this.r() < 0.34 ? 'dd' : this.r() < 0.68 ? 'visor' : 'time');
@@ -1271,6 +1418,57 @@ export class Match {
         this.emit({ k: 'pickup', id: ch.id, text: '+15 segundos', icon: '⏱️', x: ch.x, y: ch.y + H + 0.4, z: ch.z });
       }
       this.emit({ k: 'sfx', s: 'pickup' });
+    }
+  }
+
+  // Vaca de Concreto: cae, explota y rebota varias veces
+  stepVaca(o, dt) {
+    o.vy -= GRAVITY * dt;
+    o.spin = (o.spin || 0) + dt * 6;
+    o.yaw = o.dir + Math.sin(o.spin) * 0.6;
+    const steps = Math.max(1, Math.ceil(Math.hypot(o.vx, o.vy, o.vz) * dt / 0.15));
+    for (let s = 0; s < steps; s++) {
+      o.x += o.vx * dt / steps; o.y += o.vy * dt / steps; o.z += o.vz * dt / steps;
+      if (o.y < this.water - 0.3) {
+        o.dead = true;
+        this.emit({ k: 'splash', x: o.x, y: this.water, z: o.z });
+        this.emit({ k: 'sfx', s: 'splash' });
+        return;
+      }
+      const hitCh = o.vy < 0 && this.chickens.some((c) => c.alive && Math.hypot(c.x - o.x, c.z - o.z) < 0.9 && o.y - c.y < H + 0.4 && o.y > c.y - 0.3);
+      if (o.vy < 0 && (this.terrain.solid(o.x, o.y - 0.2, o.z) || hitCh)) {
+        o.bounces++;
+        const b = BOOM.vaca;
+        this.explode(o.x, o.y, o.z, b.r, b.d * (o.dd || 1), o.owner);
+        this.emit({ k: 'sfx', s: 'moo' });
+        if (o.bounces >= 7) { o.dead = true; this.emit({ k: 'feathers', x: o.x, y: o.y + 0.5, z: o.z, color: '#b9bdc2' }); return; }
+        o.y = Math.max(o.y, this.terrain.surfaceY(o.x, o.z, o.y + 2) + 0.2);
+        o.vy = 8.5 - o.bounces * 0.5;
+        o.vx = Math.sin(o.dir) * 2.4; o.vz = Math.cos(o.dir) * 2.4;
+        break;
+      }
+    }
+  }
+
+  // Súper Gallina: vuela hacia donde la apunte el jugador
+  stepSuperGallina(o, dt) {
+    o.t -= dt;
+    o.age = (o.age || 0) + dt;
+    if (o.t <= 0) { this.explodeObj(o); return; }
+    const cp = Math.cos(o.pitch);
+    o.vx = Math.sin(o.yaw) * cp * o.speed; o.vy = Math.sin(o.pitch) * o.speed; o.vz = Math.cos(o.yaw) * cp * o.speed;
+    const steps = Math.max(1, Math.ceil(o.speed * dt / 0.12));
+    for (let s = 0; s < steps; s++) {
+      o.x += o.vx * dt / steps; o.y += o.vy * dt / steps; o.z += o.vz * dt / steps;
+      if (o.y < this.water - 0.2 || o.x < -15 || o.z < -15 || o.x > WORLD_X + 15 || o.z > WORLD_Z + 15) {
+        o.dead = true;
+        this.emit({ k: 'splash', x: o.x, y: this.water, z: o.z });
+        this.emit({ k: 'sfx', s: 'splash' });
+        if (this.turn && this.turn.walker === o.id) { this.turn.walker = null; this.startRetreat(); }
+        return;
+      }
+      const hitCh = o.age > 0.5 && this.chickens.some((c) => c.alive && Math.hypot(c.x - o.x, c.z - o.z) < 0.7 && o.y > c.y - 0.2 && o.y < c.y + H + 0.3);
+      if (this.terrain.solid(o.x, o.y, o.z) || hitCh || o.y > 30) { this.explodeObj(o); return; }
     }
   }
 
@@ -1339,7 +1537,7 @@ export class Match {
     const T = this.turn;
     const q = (v) => Math.round(v * 100) / 100;
     return {
-      ch: this.chickens.map((c) => [q(c.x), q(c.y), q(c.z), q(c.yaw), c.hp, (c.alive ? 1 : 0) | (c.air ? 2 : 0) | (c.movingT > 0 ? 4 : 0) | (c.rope ? 8 : 0) | (c.jet > 0 ? 16 : 0) | (c.umbrella ? 32 : 0) | (c.dying > 0 ? 64 : 0) | (c.hurtT > 0 ? 128 : 0) | (c.backflip > 0 ? 256 : 0), c.rope ? [q(c.rope.x), q(c.rope.y), q(c.rope.z)] : 0, q(c.walk % 10)]),
+      ch: this.chickens.map((c) => [q(c.x), q(c.y), q(c.z), q(c.yaw), c.hp, (c.alive ? 1 : 0) | (c.air ? 2 : 0) | (c.movingT > 0 ? 4 : 0) | (c.rope ? 8 : 0) | (c.jet > 0 ? 16 : 0) | (c.umbrella ? 32 : 0) | (c.dying > 0 ? 64 : 0) | (c.hurtT > 0 ? 128 : 0) | (c.backflip > 0 ? 256 : 0) | (c.flaming ? 512 : 0) | (c.bursting ? 1024 : 0), c.rope ? [q(c.rope.x), q(c.rope.y), q(c.rope.z)] : 0, q(c.walk % 10)]),
       o: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => [o.id, o.kind, q(o.x), q(o.y), q(o.z), q(o.yaw), o.para ? 1 : 0, (o.trig || o.trap) ? 1 : 0, o.name || 0]),
       cam: this.camera(),
       w: [q(this.wind.x), q(this.wind.z)],
@@ -1359,7 +1557,7 @@ export class Match {
   // estado para dibujar directamente en el anfitrión (sin redondear)
   view() {
     return {
-      chickens: this.chickens.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, yaw: c.yaw, hp: c.hp, alive: c.alive, air: c.air, walking: c.movingT > 0, rope: c.rope ? [c.rope.x, c.rope.y, c.rope.z] : null, jet: c.jet > 0, umbrella: c.umbrella, dying: c.dying > 0, hurt: c.hurtT > 0, backflip: c.backflip > 0 })),
+      chickens: this.chickens.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, yaw: c.yaw, hp: c.hp, alive: c.alive, air: c.air, walking: c.movingT > 0, rope: c.rope ? [c.rope.x, c.rope.y, c.rope.z] : null, jet: c.jet > 0, umbrella: c.umbrella, dying: c.dying > 0, hurt: c.hurtT > 0, backflip: c.backflip > 0, flaming: !!c.flaming, bursting: !!c.bursting })),
       objs: this.objs.filter((o) => !o.dead && !(o.delay > 0)).map((o) => ({ id: o.id, kind: o.kind, x: o.x, y: o.y, z: o.z, yaw: o.yaw, para: !!o.para, trig: !!(o.trig || o.trap), trap: !!o.trap, name: o.name })),
       cam: this.camera(), water: this.water, wind: [this.wind.x, this.wind.z], phase: this.phase, turn: this.tview(),
     };
