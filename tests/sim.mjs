@@ -2,7 +2,7 @@
 // Uso: node tests/sim.mjs
 import { Match } from '../game/match.js';
 import { CpuBrain } from '../game/ai.js';
-import { DEFAULT_CFG, WEAPONS } from '../game/constants.js';
+import { DEFAULT_CFG, WEAPONS, ACCESSORIES, availableAccessories, MODES } from '../game/constants.js';
 import { ISLAND_IDS } from '../game/islands.js';
 import { M } from '../game/terrain.js';
 import { LEVELS, GOALS, SPEAKER_IDS, levelById, isValidLevel, storyTeams, storyCfg } from '../game/story.js';
@@ -475,6 +475,35 @@ function winStory(n, tries = 4) {
   const t12cOk = l6Ok && l8Ok;
   if (!t12cOk) fails++;
   console.log(`${t12cOk ? 'OK ' : 'MAL'} historia niveles 6 y 8 (Sargento Lata ${l6Ok}, Zorro Rufo ${l8Ok})`);
+}
+
+// 13) modo historia, selector de nivel, fase cinematic y desbloqueo de zorro
+{
+  // Modo historia en constantes
+  const hasHistoriaMode = MODES.some((m) => m.id === 'historia');
+  const zorroLocked = !availableAccessories(false).some((a) => a.id === 'zorro');
+  const zorroUnlocked = availableAccessories(true).some((a) => a.id === 'zorro');
+
+  // Flujo de cinemática (avanzar y saltar)
+  const lvl1 = levelById(1);
+  const heroCtx = { heroNames: ['Pío', 'Pluma'], heroColor: '#ff4757', heroAcc: 'casco' };
+  const beatsIntro = buildCinematic(lvl1, 'intro', heroCtx);
+  const cineIntro = new Cinema('intro', beatsIntro, 1);
+  const initialBeat = cineIntro.i === 0 && !cineIntro.done;
+  cineIntro.advance();
+  const advanceBeat = cineIntro.i === 1 && !cineIntro.done;
+  cineIntro.skip();
+  const skipIntro = cineIntro.done === true;
+
+  // Cinemática de outro del nivel 8 (desbloqueo de accesorio)
+  const lvl8 = levelById(8);
+  const beatsOutro = buildCinematic(lvl8, 'outro', heroCtx);
+  const cineOutro = new Cinema('outro', beatsOutro, 8);
+  const outroValid = beatsOutro.length > 0 && cineOutro.cur.speaker.id !== '';
+
+  const t12_3aOk = hasHistoriaMode && zorroLocked && zorroUnlocked && initialBeat && advanceBeat && skipIntro && outroValid;
+  if (!t12_3aOk) fails++;
+  console.log(`${t12_3aOk ? 'OK ' : 'MAL'} historia modo, cinemática y accesorio zorro (${t12_3aOk})`);
 }
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);

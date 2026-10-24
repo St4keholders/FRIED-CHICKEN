@@ -55,7 +55,11 @@ export const ACCESSORIES = [
   { id: 'gafas', name: 'Gafas de sol' },
   { id: 'copete', name: 'Copete punk' },
   { id: 'chef', name: 'Gorro de chef' },
+  { id: 'zorro', name: 'Zorro Rufo (monóculo)', unlockable: true },
 ];
+export function availableAccessories(unlockedZorro = false) {
+  return ACCESSORIES.filter((a) => !a.unlockable || unlockedZorro);
+}
 
 // ---- armas ----
 // aim: power (cargar y lanzar), direct (sin potencia), melee (golpe), drop (se deja en el piso),
@@ -121,6 +125,7 @@ export function islandName(id) {
 export const MODES = [
   { id: 'versus', name: 'Versus', desc: 'Todos contra todos por turnos' },
   { id: 'coop', name: 'Cooperativo', desc: 'Juntos contra la CPU' },
+  { id: 'historia', name: 'Modo Historia', desc: 'El Gran Robo de los Huevos (8 niveles)' },
 ];
 export const TEAM_MODES = [
   { id: 'solo', name: 'Cada uno su equipo' },
@@ -156,6 +161,7 @@ export function sensRad(id) {
 
 export const DEFAULT_CFG = {
   mode: 'versus',
+  storyLevel: 1,
   teamMode: 'solo',
   chickens: 4,
   hp: 100,
