@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { chickenPortrait } from '../game/render';
-import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS } from '../game/constants';
+import { ACCESSORIES, SLOT_NAMES, TEAM_NAMES, MODES, TEAM_MODES, CPU_LEVELS, TURN_TIMES, HP_OPTIONS, CHICKEN_COUNTS, SUDDEN_OPTIONS, QUALITY, ISLANDS, RANDOM_ISLAND, islandName, WEAPON_SETS, TEAM_COLORS, weaponById } from '../game/constants';
 
 function Seg({ value, options, onChange, disabled }) {
   return (
@@ -155,6 +155,53 @@ export function TeamBars({ teams, current, className = 'teamsb' }) {
           <div className="hb"><i style={{ width: `${t.max ? Math.min(100, (t.hp / t.max) * 100) : 0}%` }} /></div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// HUD compartido entre el TV y el modo PC de /mando
+export function MatchHud({ turn, matchPhase, wind, camYaw, teams, sudden, suddenIn = 0, showSudden = true, banner, kbTurn, hideWeapon = false, onOpenWeapons, children }) {
+  const t = turn;
+  const w = t ? weaponById(t.weapon) : null;
+  const n = t && t.inv ? t.inv[t.weapon] : -1;
+  const clockVal = t ? (t.retreat ? t.retreat : t.clock) : '';
+  const showPlay = t && (matchPhase === 'play' || matchPhase === 'retreat');
+  return (
+    <div className="hud">
+      {showPlay && (
+        <div className="turnp">
+          <div className="tb" style={{ '--tc': t.color }}>{t.cpu ? '🤖 ' : ''}{t.teamName}<small>{t.ch}{t.dd ? ' · 💪 Doble daño' : ''}</small></div>
+          <div className={`clock ${t.retreat ? 'ret' : t.clock <= 5 ? 'warn' : ''}`}>{clockVal}</div>
+        </div>
+      )}
+      <Wind wind={wind} camYaw={camYaw} />
+      {showPlay && w && !hideWeapon && (
+        <div className="card wpn" style={onOpenWeapons ? { pointerEvents: 'auto', cursor: 'pointer' } : undefined} onClick={onOpenWeapons}>
+          <span className="ic">{w.icon}</span>
+          <div>
+            <div className="nm">{w.name}</div>
+            <div className="am">{n < 0 ? 'Munición infinita' : `Quedan ${n}`}{w.fuse ? ` · Mecha ${t.fuse}s` : ''}</div>
+          </div>
+          {onOpenWeapons && !t.retreat && !t.walker && (
+            <button type="button" className="btn sm yellow wopen-btn" onClick={(e) => { e.stopPropagation(); onOpenWeapons(); }}>🎒 Armas</button>
+          )}
+        </div>
+      )}
+      {showPlay && t.charging && <div className="powerbar"><i style={{ width: `${Math.round(t.power * 100)}%` }} /></div>}
+      {showSudden && <div className="pill sudden">{sudden ? '💀 Muerte súbita' : `💀 Muerte súbita en ${Math.floor(suddenIn / 60)}:${String(suddenIn % 60).padStart(2, '0')}`}</div>}
+      <TeamBars teams={teams} current={t ? t.team : -1} />
+      {banner && (
+        <div className="banner" style={{ '--tc': banner.color }}>
+          <div className="bt">{banner.text}</div>
+          {banner.sub && <div className="bs">{banner.sub}</div>}
+        </div>
+      )}
+      {kbTurn && showPlay && (
+        <div className="card keys">
+          <b>Teclado y mouse:</b> W/S caminar · A/D girar · Clic en el juego: apuntar con mouse y disparar (clic izq.) · Clic der./R: 🎯 apuntar · Rueda/E/Q: arma · Espacio: disparar · J/K: saltar · 1-5: mecha · C: mapa · Esc: soltar mouse
+        </div>
+      )}
+      {children}
     </div>
   );
 }

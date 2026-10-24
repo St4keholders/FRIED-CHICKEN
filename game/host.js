@@ -417,14 +417,20 @@ export class GameHost {
   onMouseDown(e) {
     if (!this.isKbTurn()) return;
     this.audio.init();
+    const hasLock = typeof document !== 'undefined' && document.pointerLockElement === this.renderer.canvas;
     if (e.button === 2) {
       e.preventDefault();
       this.mouseLocked = true;
+      this.lastMouse = { x: e.clientX, y: e.clientY };
       try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
       this.match.act({ t: 'aim' });
     } else if (e.button === 0) {
-      this.mouseLocked = true;
-      try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
+      if (!this.mouseLocked && !hasLock) {
+        this.mouseLocked = true;
+        this.lastMouse = { x: e.clientX, y: e.clientY };
+        try { this.renderer.canvas.requestPointerLock?.(); } catch (err) { /* nada */ }
+        return;
+      }
       this.mouseFire = true;
     }
   }
@@ -435,8 +441,11 @@ export class GameHost {
 
   onMouseMove(e) {
     if (!this.isKbTurn()) return;
-    if (!this.mouseLocked && (typeof document === 'undefined' || document.pointerLockElement !== this.renderer.canvas)) return;
-    const dx = e.movementX || 0, dy = e.movementY || 0;
+    const hasLock = typeof document !== 'undefined' && document.pointerLockElement === this.renderer.canvas;
+    if (!this.mouseLocked && !hasLock) return;
+    const dx = hasLock ? (e.movementX || 0) : (this.lastMouse ? e.clientX - this.lastMouse.x : (e.movementX || 0));
+    const dy = hasLock ? (e.movementY || 0) : (this.lastMouse ? e.clientY - this.lastMouse.y : (e.movementY || 0));
+    this.lastMouse = { x: e.clientX, y: e.clientY };
     if (!dx && !dy) return;
     const { rad, invertY } = this.mouseSensCfg();
     this.match.aimDelta(dx * rad, -dy * rad * (invertY ? -1 : 1));
@@ -454,6 +463,7 @@ export class GameHost {
   setLocalIn(inp) { this.localIn = inp; }
   localAct(a) { if (this.localSlot !== null) this.playerAct(this.localSlot, a); }
   localAim(dyaw, dpitch) { if (this.localSlot !== null) this.playerAim(this.localSlot, dyaw, dpitch); }
+  kbAct(a) { if (this.isKbTurn()) this.playerAct(this.match.turn.slot, a); }
 
   toggleMute() { this.audio.setMuted(!this.audio.muted); this.changed(); }
 
@@ -729,7 +739,13 @@ export class GameHost {
       this.players.forEach((p, i) => {
         if (!p || p.kind !== 'phone' || !p.connected) return;
         const myTeam = m.teams.find((t) => t.slots.includes(i));
-        const msg = { t: 'turn', info, you: !!(info && !info.cpu && info.slot === i), teams, myTeam: myTeam ? myTeam.idx : -1, inv: myTeam ? myTeam.inv : null, paused: this.paused, sudden: m.sudden };
+        const msg = {
+          t: 'turn', info, you: !!(info && !info.cpu && info.slot === i), teams,
+          myTeam: myTeam ? myTeam.idx : -1, inv: myTeam ? myTeam.inv : null,
+          paused: this.paused, sudden: m.sudden,
+          suddenIn: Math.max(0, Math.ceil(m.cfg.sudden * 60 - m.time)),
+          wind: m.wind,
+        };
         const s = JSON.stringify(msg);
         if (s !== this.lastInfo[i]) { this.lastInfo[i] = s; this.send(i, msg); }
       });

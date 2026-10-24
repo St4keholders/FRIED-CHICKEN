@@ -149,17 +149,55 @@ const tapFire = async (p, ms = 150) => {
   await t.close(); await a.close(); await b.close();
 }
 
-// ---------- 4. Jugador con teclado en el PC ----------
+// ---------- 4. Jugador con teclado en el TV y otro jugador desde otro PC en /mando ----------
 {
   const t = await tv({ width: 1366, height: 768 });
+  check((await t.locator('.join').innerText()).includes('o abre el link en otro PC'), 'el lobby del TV invita a abrir el link en otro PC');
   await t.mouse.click(700, 400); await t.keyboard.press('Space'); await sleep(400);
   check(await t.locator('.slot .meta', { hasText: 'Teclado' }).count() === 1, 'teclado se une con Espacio');
-  await t.keyboard.press('Enter'); await sleep(6000);
-  let mine = false;
-  for (let i = 0; i < 60 && !mine; i++) { mine = !!(await t.locator('.keys').count()); if (!mine) await sleep(1000); }
-  check(mine, 'llega el turno del teclado');
-  if (mine) { await t.keyboard.press('KeyR'); await t.keyboard.down('Space'); await sleep(900); await t.keyboard.up('Space'); await sleep(2500); await t.screenshot({ path: OUT + '4_teclado.png' }); }
-  await t.close();
+  const code = await t.evaluate(() => sessionStorage.getItem('fc_code'));
+  const pc = await browser.newPage({ viewport: { width: 1280, height: 720 }, isMobile: false, hasTouch: false });
+  watch(pc, 'PC2');
+  await pc.goto(`${BASE}/mando${Q}&c=${code}`);
+  await sleep(3500);
+  check(await pc.locator('.ctrl.pcmode').count() === 1 && await pc.locator('button[data-mode="pc"].on').count() === 1, '/mando en PC entra en modo PC por defecto');
+  await t.evaluate(() => window.__fcHost.setCfg({ cpuTeams: 0 }));
+  await sleep(300);
+  await t.keyboard.press('Enter'); await sleep(5000);
+  check(await pc.evaluate(() => !!(window.__fcMirror && window.__fcMirror.snaps.length && !window.__fcMirror.renderer.phone)), 'el segundo PC ve la partida a pantalla completa');
+  check(await pc.locator('.hud .teamsb').count() === 1 && await pc.locator('.pad').count() === 0, 'el modo PC muestra el HUD del TV sin botones táctiles');
+  let kbDone = false, pcDone = false;
+  for (let round = 0; round < 2; round++) {
+    let who = null;
+    for (let i = 0; i < 30 && !who; i++) {
+      if (!kbDone && await t.locator('.keys').count()) who = 'kb';
+      else if (!pcDone && await pc.locator('.keys').count()) who = 'pc';
+      if (!who) await sleep(500);
+    }
+    if (who === 'kb') {
+      kbDone = true;
+      await t.keyboard.press('KeyR');
+      await t.keyboard.down('Space'); await sleep(700); await t.keyboard.up('Space');
+      await sleep(2500);
+      await t.screenshot({ path: OUT + '4_teclado.png' });
+    } else if (who === 'pc') {
+      pcDone = true;
+      await pc.locator('.wopen-btn').click(); await sleep(300);
+      check(await pc.locator('.wgrid').count() === 1, 'el modo PC abre la cuadrícula de armas con el mouse');
+      await pc.locator('.wgrid').getByText('Cerrar').click(); await sleep(200);
+      const before = await t.evaluate(() => ({ pitch: window.__fcHost.match.turn.pitch, yaw: window.__fcHost.match.activeChicken().yaw }));
+      await pc.mouse.click(640, 360);
+      await pc.mouse.move(740, 260, { steps: 6 });
+      await sleep(250);
+      const after = await t.evaluate(() => ({ pitch: window.__fcHost.match.turn.pitch, yaw: window.__fcHost.match.activeChicken().yaw }));
+      check(after.pitch > before.pitch + 0.05 && Math.abs(after.yaw - before.yaw) > 0.05, 'el jugador en otro PC apunta con el mouse');
+      await pc.mouse.down(); await sleep(700); await pc.mouse.up();
+      await sleep(2500);
+      await pc.screenshot({ path: OUT + '4_pc_mando.png' });
+    }
+  }
+  check(kbDone && pcDone, 'juegan su turno tanto el teclado del TV como el otro PC en /mando');
+  await t.close(); await pc.close();
 }
 
 await browser.close();

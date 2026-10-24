@@ -14,8 +14,8 @@ function lerpAng(a, b, t) {
 }
 
 export class MirrorView {
-  constructor(container, quality) {
-    this.renderer = new Renderer(container, { quality: quality || 'normal', phone: true });
+  constructor(container, quality, phone = true) {
+    this.renderer = new Renderer(container, { quality: quality || 'normal', phone });
     this.snaps = [];
     this.terrain = null;
     this.clock = 0;

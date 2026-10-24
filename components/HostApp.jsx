@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, islandName, weaponById } from '../game/constants';
+import { PASSWORD_HASH, TEAM_COLORS, SLOT_NAMES, ACCESSORIES, islandName } from '../game/constants';
 import { sha256 } from '../game/sha256';
 import { peerParamsString } from '../game/peeropts';
 import { chickenPortrait } from '../game/render';
-import { ConfigPanel, Wind, TeamBars, Results, MyChicken } from './Shared';
-import { TurnPad } from './TouchControls';
+import { ConfigPanel, MatchHud, Results, MyChicken } from './Shared';
+import { TurnPad, WeaponGrid } from './TouchControls';
 
 function Gate({ onOk }) {
   const [pw, setPw] = useState('');
@@ -116,7 +116,7 @@ function Lobby({ st, h, qr, url, share, msg }) {
         <h3>Únete con tu celular</h3>
         {qr ? <img className="qr" src={qr} alt="QR para unirse" /> : <div className="qr" />}
         <div className="code">{st.code || '·····'}</div>
-        <div className="small">{url.split('?')[0].replace(/^https?:\/\//, '')}</div>
+        <div className="small">{url.split('?')[0].replace(/^https?:\/\//, '')} · o abre el link en otro PC</div>
         <div className="row" style={{ justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
           <button className="btn blue sm" onClick={share}>📤 Compartir link</button>
           {st.touch && st.local === null && <button className="btn green sm" onClick={() => h.addLocal()}>🎮 Jugar en este celular</button>}
@@ -145,43 +145,36 @@ function Lobby({ st, h, qr, url, share, msg }) {
 }
 
 function Hud({ st, h }) {
+  const [kbGrid, setKbGrid] = useState(false);
   const t = st.turn;
-  const w = t ? weaponById(t.weapon) : null;
-  const n = t && t.inv ? t.inv[t.weapon] : -1;
-  const clockVal = t ? (t.retreat ? t.retreat : t.clock) : '';
   const showPlay = t && (st.matchPhase === 'play' || st.matchPhase === 'retreat');
   const isHost = true;
   return (
-    <div className="hud">
-      {showPlay && (
-        <div className="turnp">
-          <div className="tb" style={{ '--tc': t.color }}>{t.cpu ? '🤖 ' : ''}{t.teamName}<small>{t.ch}{t.dd ? ' · 💪 Doble daño' : ''}</small></div>
-          <div className={`clock ${t.retreat ? 'ret' : t.clock <= 5 ? 'warn' : ''}`}>{clockVal}</div>
-        </div>
-      )}
-      <Wind wind={st.wind} camYaw={st.camYaw} />
-      {showPlay && w && !st.localTurn && (
-        <div className="card wpn">
-          <span className="ic">{w.icon}</span>
-          <div><div className="nm">{w.name}</div><div className="am">{n < 0 ? 'Munición infinita' : `Quedan ${n}`}{w.fuse ? ` · Mecha ${t.fuse}s` : ''}</div></div>
-        </div>
-      )}
-      {showPlay && t.charging && <div className="powerbar"><i style={{ width: `${Math.round(t.power * 100)}%` }} /></div>}
-      {st.phase === 'match' && st.local === null && <div className="pill sudden">{st.sudden ? '💀 Muerte súbita' : `💀 Muerte súbita en ${Math.floor(st.suddenIn / 60)}:${String(st.suddenIn % 60).padStart(2, '0')}`}</div>}
-      <TeamBars teams={st.teams} current={t ? t.team : -1} />
-      {st.banner && (
-        <div className="banner" style={{ '--tc': st.banner.color }}>
-          <div className="bt">{st.banner.text}</div>
-          {st.banner.sub && <div className="bs">{st.banner.sub}</div>}
-        </div>
-      )}
-      {st.kbTurn && showPlay && (
-        <div className="card keys">
-          <b>Teclado y mouse:</b> W/S caminar · A/D girar · Clic en el juego: apuntar con mouse y disparar (clic izq.) · Clic der./R: 🎯 apuntar · Rueda/E/Q: arma · Espacio: disparar · J/K: saltar · 1-5: mecha · C: mapa · Esc: soltar mouse
-        </div>
-      )}
+    <MatchHud
+      turn={t}
+      matchPhase={st.matchPhase}
+      wind={st.wind}
+      camYaw={st.camYaw}
+      teams={st.teams}
+      sudden={st.sudden}
+      suddenIn={st.suddenIn}
+      showSudden={st.phase === 'match' && st.local === null}
+      banner={st.banner}
+      kbTurn={st.kbTurn}
+      hideWeapon={!!st.localTurn}
+      onOpenWeapons={st.kbTurn && showPlay ? () => setKbGrid(true) : null}
+    >
       {st.localTurn && showPlay && (
         <TurnPad info={t} inv={t.inv} onInput={(i) => h.setLocalIn(i)} onAct={(a) => h.localAct(a)} onAim={({ dyaw, dpitch }) => h.localAim(dyaw, dpitch)} />
+      )}
+      {kbGrid && st.kbTurn && showPlay && t && (
+        <WeaponGrid
+          inv={t.inv}
+          current={t.weapon}
+          onClose={() => setKbGrid(false)}
+          onPick={(id) => { h.kbAct({ t: 'weapon', w: id }); setKbGrid(false); }}
+          onSurrender={() => { h.kbAct({ t: 'surrender' }); setKbGrid(false); }}
+        />
       )}
       {st.phase === 'match' && <button className="btn sm white" style={st.local !== null ? { position: 'absolute', top: 64, left: 16, pointerEvents: 'auto' } : { position: 'absolute', bottom: 16, right: 16, pointerEvents: 'auto' }} onClick={() => h.togglePause()}>II Pausa</button>}
       {st.paused && st.phase === 'match' && (
@@ -197,6 +190,6 @@ function Hud({ st, h }) {
         </div>
       )}
       {st.phase === 'results' && <Results r={st.results} canAct={isHost} onAgain={() => h.next('again')} onLobby={() => h.next('lobby')} />}
-    </div>
+    </MatchHud>
   );
 }
