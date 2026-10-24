@@ -813,6 +813,13 @@ export class Renderer {
         look = f.clone();
         speed = 5;
         break;
+      case 'cine': {
+        // cámara de cinemática: gira alrededor del punto f a la distancia y altura que mande el director
+        pos = f.clone().add(new THREE.Vector3(Math.sin(c.yaw) * c.dist, c.h, Math.cos(c.yaw) * c.dist));
+        look = f.clone().add(new THREE.Vector3(0, 0.8, 0));
+        speed = 2.4;
+        break;
+      }
       case 'over':
         pos = new THREE.Vector3(cx, 0, cz).add(back(c.yaw, 52)).add(new THREE.Vector3(0, 46, 0));
         look = new THREE.Vector3(cx, 2, cz);

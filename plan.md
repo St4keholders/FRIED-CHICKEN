@@ -161,6 +161,14 @@ Marca la revisión como hecha cuando hayas leído todos los archivos de `game/` 
   - **Cinemáticas** antes y después de cada nivel, con la cámara del propio motor (encuadres, paneos, zoom) y cajas de diálogo con retrato. **Hablan los pollitos que eligieron los jugadores**, más el Zorro Rufo, la Gallina Abuela y los jefes. Avanzan con Enter, clic o "Siguiente" en el celular; "Saltar" solo J1. Se ven también en cada celular y PC con vista.
   - Sugerencia técnica: `game/story.js` (niveles, objetivos, guiones), `game/cinema.js` (director de cámara y diálogos), fase nueva `cinematic` en `host.js` y en el mando, objetivos especiales en `match.js` (condiciones de victoria y derrota por nivel, unidades especiales, oleadas). El accesorio `zorro` ya existe en `models.js`: al terminar la historia se **desbloquea** (guardado en el `localStorage` del anfitrión).
   - Prueba: completar los 8 niveles con jugadores automáticos (puedes reutilizar `CpuBrain` para los humanos en `tests/sim.mjs`), reintentar, saltar nivel y empezar en cualquier nivel.
+  - Subtareas (una por vuelta):
+    - [x] **T12.1** Datos: `game/story.js` (8 niveles: isla, objetivo, enemigos, cielo, pistas, guiones de intro y final) y `game/cinema.js` (resuelve quién habla, retrato y encuadre/paneo/zoom de cámara). Modo de cámara `cine` en `render.js`.
+    - [ ] **T12.2a** `match.js`: base de historia (`story` en `Match`, `checkOver` por nivel, reservas de enemigos, rondas) + niveles 1, 2, 4 y 7 (eliminar, agua que sube, proteger a la Gallina Abuela, supervivencia por oleadas).
+    - [ ] **T12.2b** Niveles 3 y 5: Huevitos (`cajaHuevo`, 3 en 8 rondas) y máquinas de lata (`maquinaLata`, 4, munición limitada), con modelos nuevos.
+    - [ ] **T12.2c** Niveles 6 y 8: jefes (Sargento Lata con escudo frontal; Zorro Rufo con fases, cambia de arma y lanza piezas), tamaño grande y cielo de noche/atardecer.
+    - [ ] **T12.3a** `host.js`: modo `historia`, selector de nivel, fase `cinematic` (Enter/clic/Siguiente, Saltar solo J1), siguiente nivel, reintentar/saltar nivel, desbloqueo del accesorio `zorro`.
+    - [ ] **T12.3b** Interfaz: lobby (modo Historia + nivel), cinemática en TV, celulares y PC, objetivo en el HUD, resultados con Reintentar/Saltar, accesorio `zorro` en el selector.
+    - [ ] **T12.4** Pruebas: `tests/sim.mjs` completa los 8 niveles con `CpuBrain` (también reintentar, saltar y empezar en cualquier nivel) y `tests/e2e.mjs` recorre una cinemática y un nivel.
 
 - [ ] **T13. Rendimiento en celular.**
   - Medidor de cuadros por segundo con `?fps=1` en la URL.

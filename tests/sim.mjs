@@ -5,6 +5,9 @@ import { CpuBrain } from '../game/ai.js';
 import { DEFAULT_CFG, WEAPONS } from '../game/constants.js';
 import { ISLAND_IDS } from '../game/islands.js';
 import { M } from '../game/terrain.js';
+import { LEVELS, GOALS, SPEAKER_IDS, levelById, isValidLevel } from '../game/story.js';
+import { buildCinematic, beatCamera, focusPoint, Cinema, CAM_STYLES } from '../game/cinema.js';
+import { ISLANDS } from '../game/constants.js';
 
 const dt = 1 / 60;
 const mkTeams = (cpu) => [0, 1].map((i) => ({ id: 't' + i, name: 'T' + i, color: '#f00', dark: '#800', acc: 'casco', cpu, slots: cpu === null ? [i] : [], alliance: 't' + i, names: ['a', 'b', 'c', 'd'] }));
@@ -213,6 +216,53 @@ for (const w of WEAPONS) {
   const t11Ok = foamSlowOk && ballRollOk && magnetUnbreakableOk && jellyBounceOk;
   if (!t11Ok) fails++;
   console.log(`${t11Ok ? 'OK ' : 'MAL'} detalles de islas (espuma frena, bolas de billar ruedan, imanes irrompibles, gelatina rebota)`);
+}
+// 9) modo Historia: datos de los 8 niveles y director de cinemáticas
+{
+  const ids = new Set(ISLANDS.map((i) => i.id));
+  let ok = LEVELS.length === 8 && LEVELS.every((l, i) => l.n === i + 1);
+  const why = [];
+  for (const l of LEVELS) {
+    if (!ids.has(l.island)) { ok = false; why.push(`isla ${l.n}`); }
+    if (!GOALS.includes(l.goal)) { ok = false; why.push(`objetivo ${l.n}`); }
+    if (!l.goalText || !l.enemy || !(l.enemy.count > 0) || !(l.enemy.hp > 0)) { ok = false; why.push(`datos ${l.n}`); }
+    for (const kind of ['intro', 'outro']) {
+      if (!l[kind] || !l[kind].length) { ok = false; why.push(`${kind} ${l.n}`); continue; }
+      for (const b of l[kind]) {
+        const valid = SPEAKER_IDS.includes(b.who) || /^h[0-3]$/.test(b.who);
+        if (!valid || !b.text || b.text.length > 140 || !['heroes', 'enemies', 'abuela', 'boss', 'machines', 'island'].includes(b.focus)) { ok = false; why.push(`guion ${l.n} ${kind}`); }
+      }
+    }
+  }
+  const need = { 2: 'water', 3: 'eggs', 4: 'protect', 5: 'machines', 6: 'boss', 7: 'survive', 8: 'boss' };
+  for (const [n, g] of Object.entries(need)) if (levelById(+n).goal !== g) { ok = false; why.push(`meta ${n}`); }
+  if (!isValidLevel(1) || !isValidLevel(8) || isValidLevel(0) || isValidLevel(9) || isValidLevel(2.5)) { ok = false; why.push('niveles válidos'); }
+  if (!levelById(6).boss.shield || levelById(8).boss.id !== 'zorro' || !levelById(4).abuela || levelById(3).eggs.total !== 3 || levelById(5).machines.count !== 4 || levelById(7).rounds !== 6) { ok = false; why.push('detalles'); }
+  if (!ok) fails++;
+  console.log(`${ok ? 'OK ' : 'MAL'} historia: 8 niveles con isla, objetivo y guiones válidos ${why.join(', ')}`);
+
+  const ctx = { heroNames: ['Pío', 'Kiki'], heroColor: '#ff4757', heroAcc: 'casco' };
+  const beats = buildCinematic(levelById(1), 'intro', ctx);
+  const names = beats.map((b) => b.speaker.name);
+  const namesOk = names.includes('Pío') && names.includes('Kiki') && names.includes('Zorro Rufo') && beats.every((b) => b.text && CAM_STYLES.includes(b.style));
+  const cin = new Cinema('intro', beats, 1);
+  const seen = [];
+  while (!cin.done) { seen.push(cin.view().i); cin.update(1); cin.advance(); }
+  const flowOk = seen.length === beats.length && cin.done && cin.view().n === beats.length;
+  const mt = new Match({ cfg: { ...DEFAULT_CFG }, teams: mkTeams(null), seed: 5, island: 'arenero' });
+  let camOk = true;
+  for (const style of CAM_STYLES) for (const t of [0, 1, 5, 99]) {
+    const c = beatCamera(style, focusPoint('island', mt), t);
+    if (c.m !== 'cine' || ![c.yaw, c.dist, c.h, ...c.f].every(Number.isFinite)) camOk = false;
+  }
+  const fp = focusPoint('heroes', mt);
+  const focusOk = Array.isArray(fp) && fp.every(Number.isFinite) && focusPoint('boss', mt).length === 3 && focusPoint('machines', null).length === 3;
+  const c2 = new Cinema('outro', buildCinematic(levelById(8), 'outro', ctx), 8);
+  c2.skip();
+  const skipOk = c2.done;
+  const allOk = namesOk && flowOk && camOk && focusOk && skipOk;
+  if (!allOk) fails++;
+  console.log(`${allOk ? 'OK ' : 'MAL'} cinemáticas: hablan los pollitos de los jugadores, cámara con números válidos, avanzar y saltar`);
 }
 console.log(fails ? `\n${fails} FALLAS` : '\nTodo bien');
 process.exit(fails ? 1 : 0);
